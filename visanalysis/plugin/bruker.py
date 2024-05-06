@@ -145,7 +145,7 @@ class BrukerPlugin(base_plugin.BasePlugin):
             self.current_series = np.swapaxes(self.current_series, 0, 2)[:, :, np.newaxis, :]  # -> xyzt
             print('Loaded xyt image series {}'.format(image_file_path))
         elif '.nii' in image_file_name:
-            nib_brain = np.squeeze(np.asanyarray(nib.load(image_file_path).dataobj).astype('uint16'))
+            nib_brain = np.squeeze(np.asanyarray(nib.load(image_file_path).dataobj).astype('float32'))
             brain_dims = nib_brain.shape
             print('brain_dims = {}'.format(brain_dims))
             if len(brain_dims) == 3:  # xyt
