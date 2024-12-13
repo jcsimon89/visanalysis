@@ -108,8 +108,8 @@ class BrukerPlugin(base_plugin.BasePlugin):
                 frame_monitor = voltage_recording
 
                 # Metadata & timing information
-                metadata_filename = 'voltage_recording'
-                metadata_basepath = os.path.join(data_directory,'func{}'.format(repr(series_number-1)),'imaging','visual',metadata_filename)
+                metadata_filename = 'recording_metadata'
+                metadata_basepath = os.path.join(data_directory,'func{}'.format(repr(series_number-1)),'imaging',metadata_filename)
                 response_timing = getAcquisitionTiming(metadata_basepath)
                 metadata = getMetaData(metadata_basepath)
 
