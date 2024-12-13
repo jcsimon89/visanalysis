@@ -33,6 +33,7 @@ if __name__ == '__main__':
     rig = args.rig
 
     experiment_file_path = os.path.join(dataset_path, experiment_name + '.hdf5')
+    print('experiment_name: ' + repr(experiment_file_path))
 
     if rig == 'Bruker':
         from visanalysis.plugin import bruker
