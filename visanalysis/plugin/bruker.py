@@ -98,18 +98,19 @@ class BrukerPlugin(base_plugin.BasePlugin):
     def attachData(self, experiment_file_name, data_directory):
         file_path = os.path.join(data_directory,experiment_file_name + '.hdf5')
         for series_number in self.getSeriesNumbers(file_path):
-            # # # # Retrieve metadata from files in data directory # # #
-                # Photodiode trace
-                voltage_filename = 'voltage_recording'
-                voltage_basepath = os.path.join(data_directory,'func{}'.format(repr(series_number-1)),'imaging','visual',voltage_filename)
-                voltage_recording, time_vector, sample_rate = getVoltageRecording(voltage_basepath)
+        # # # # Retrieve metadata from files in data directory # # #
+            # Photodiode trace
+            voltage_filename = 'voltage_recording'
+            voltage_basepath = os.path.join(data_directory,'func{}'.format(repr(series_number-1)),'imaging','visual',voltage_filename)
+            voltage_recording, time_vector, sample_rate = getVoltageRecording(voltage_basepath)
 
-                # TODO: pick frame monitor(s) out of voltage recording traces based on name, or alt by input number
-                frame_monitor = voltage_recording
+            # TODO: pick frame monitor(s) out of voltage recording traces based on name, or alt by input number
+            frame_monitor = voltage_recording
 
-                # Metadata & timing information
-                metadata_filename = 'recording_metadata'
-                metadata_basepath = os.path.join(data_directory,'func{}'.format(repr(series_number-1)),'imaging',metadata_filename)
+            # Metadata & timing information
+            metadata_filename = 'recording_metadata'
+            metadata_basepath = os.path.join(data_directory,'func{}'.format(repr(series_number-1)),'imaging',metadata_filename)
+            if os.path.exists(metadata_basepath + '.xml'):
                 response_timing = getAcquisitionTiming(metadata_basepath)
                 metadata = getMetaData(metadata_basepath)
 
