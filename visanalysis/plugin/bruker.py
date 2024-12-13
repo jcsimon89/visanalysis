@@ -96,7 +96,7 @@ class BrukerPlugin(base_plugin.BasePlugin):
         return mask
 
     def attachData(self, experiment_file_name, data_directory):
-        file_path = os.path.join(data_directory,experiment_file_name)
+        file_path = os.path.join(data_directory,experiment_file_name + '.hdf5')
         for series_number in self.getSeriesNumbers(file_path):
             # # # # Retrieve metadata from files in data directory # # #
                 # Photodiode trace
