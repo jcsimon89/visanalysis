@@ -95,23 +95,23 @@ class BrukerPlugin(base_plugin.BasePlugin):
 
         return mask
 
-    def attachData(self, experiment_file_name, data_directory):
-        file_path = os.path.join(data_directory,experiment_file_name)
+    def attachData(self, experiment_file_name, file_path, data_directory):
         for series_number in self.getSeriesNumbers(file_path):
             # # # # Retrieve metadata from files in data directory # # #
+            file_basename = 'TSeries-' + experiment_file_name.replace('-', '') + '-' + ('00' + str(series_number))[-3:]
+            metadata_filepath = os.path.join(data_directory, file_basename)
+            if os.path.exists(metadata_filepath + '.xml'):
                 # Photodiode trace
-                voltage_filename = 'voltage_recording'
-                voltage_basepath = os.path.join(data_directory,'func{}'.format(repr(series_number-1)),'imaging','visual',voltage_filename)
+                v_rec_suffix = '_Cycle00001_VoltageRecording_001'
+                voltage_basepath = os.path.join(data_directory, file_basename + v_rec_suffix)
                 voltage_recording, time_vector, sample_rate = getVoltageRecording(voltage_basepath)
 
                 # TODO: pick frame monitor(s) out of voltage recording traces based on name, or alt by input number
                 frame_monitor = voltage_recording
 
                 # Metadata & timing information
-                metadata_filename = 'voltage_recording'
-                metadata_basepath = os.path.join(data_directory,'func{}'.format(repr(series_number-1)),'imaging','visual',metadata_filename)
-                response_timing = getAcquisitionTiming(metadata_basepath)
-                metadata = getMetaData(metadata_basepath)
+                response_timing = getAcquisitionTiming(metadata_filepath)
+                metadata = getMetaData(metadata_filepath)
 
                 # # # # Attach metadata to epoch run group in data file # # #\
                 with h5py.File(file_path, 'r+') as experiment_file:
@@ -133,8 +133,8 @@ class BrukerPlugin(base_plugin.BasePlugin):
                         acquisition_group.attrs[key] = metadata[key]
 
                 print('Attached data to series {}'.format(series_number))
-        else:
-                print('WARNING! Required metadata files not found at {}'.format(metadata_basepath))
+            else:
+                print('WARNING! Required metadata files not found at {}'.format(metadata_filepath))
 
     def loadImageSeries(self, data_directory, image_file_name, channel=0):
         metadata_image_dims = self.ImagingDataObject.getAcquisitionMetadata().get('image_dims')  # xyztc
