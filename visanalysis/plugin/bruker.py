@@ -133,7 +133,7 @@ class BrukerPlugin(base_plugin.BasePlugin):
                         acquisition_group.attrs[key] = metadata[key]
 
                 print('Attached data to series {}'.format(series_number))
-            else:
+        else:
                 print('WARNING! Required metadata files not found at {}'.format(metadata_basepath))
 
     def loadImageSeries(self, data_directory, image_file_name, channel=0):
