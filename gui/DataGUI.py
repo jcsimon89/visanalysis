@@ -35,7 +35,7 @@ class DataGUI(QWidget):
         self.experiment_file_name = None
         self.experiment_file_directory = None
         self.data_directory = None
-        self.max_rois = 50
+        self.max_rois = 200
         self.roi_type = 'freehand'
         self.roi_radius = None
         self.existing_roi_set_paths = {}
