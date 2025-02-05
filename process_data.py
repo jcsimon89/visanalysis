@@ -34,11 +34,11 @@ if __name__ == '__main__':
     rig = args.rig
 
     # hardcoded file names
-    experiment_file_name = 'fly' # used for fly.hdf5 and fly.json
-
+    experiment_file_name = 'fly.hdf5'
+    json_file_name = 'fly.json'
     
     #extract info from fly.json 
-    with open(pathlib.Path(data_directory, experiment_file_name + '.json'), 'r') as file:
+    with open(pathlib.Path(data_directory, json_file_name), 'r') as file:
         fly_json = json.load(file)
 
     structural_channel = fly_json['structural_channel']
