@@ -13,7 +13,7 @@ import argparse
 
 from visanalysis.plugin import base as base_plugin
 
-# call structure: python visanalysis_preprocess.py --dataset_path "path" --experiment_name "name" --rig "rigID"
+# call structure: python attach_metadata.py --dataset_path "path" --experiment_name "name" --rig "rigID"
 
 # dataset_path: string that contains the path to the folder that has the .hdf5 file
 # experiment: experiment name
