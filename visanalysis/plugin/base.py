@@ -178,7 +178,7 @@ class BasePlugin():
         return roi_response, roi_image, roi_path, roi_mask
 
     def updateImagingDataObject(self, experiment_file_directory, experiment_file_name, series_number):
-        file_path = os.path.join(experiment_file_directory, experiment_file_name + '.hdf5')
+        file_path = os.path.join(experiment_file_directory, experiment_file_name)
         self.ImagingDataObject = imaging_data.ImagingDataObject(file_path, series_number, quiet=True)
 
     # roi display computation functions
