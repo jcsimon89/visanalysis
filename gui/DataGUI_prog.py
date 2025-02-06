@@ -53,6 +53,7 @@ class DataGUI(QWidget):
         self.experiment_file_name = experiment_file_name #name of hdf5 file, previously without .hdf5 but i'm changing that
         self.experiment_file_directory = experiment_file_directory #path to folder that contains .hdf5 file
         self.experiment_file_path = experiment_file_path #complete path to .hdf5 file
+        self.rig = rig 
         self.max_rois = 200
         self.roi_type = 'freehand'
         self.roi_radius = None
@@ -72,35 +73,16 @@ class DataGUI(QWidget):
 
         self.colors = [mcolors.to_rgb(x) for x in list(mcolors.XKCD_COLORS)[:self.max_rois]]
 
-        if rig == 'Bruker':
-            from visanalysis.plugin import bruker
-            self.plugin = bruker.BrukerPlugin()
-            print('****Bruker plugin****')
-        elif rig == 'AODscope':
-            from visanalysis.plugin import aodscope
-            self.plugin = aodscope.AodScopePlugin()
-            print('****AODscope plugin****')
-        else:
-            self.plugin = base_plugin.BasePlugin()
-            print('****Unrecognized plugin name****')
+        self.initializeDataAnalysis()
 
         self.initUI()
 
-        # load expt file
-        # self.selectDataFile
+        ## load expt file
+        # from self.selectDataFile
             # define experiment_file_path - done
             # define self.experiment_file_name - done
             # define experiment_file_directory - done
         self.currentExperimentLabel.setText(self.experiment_file_name)
-
-        #self.initializeDataAnalysis()
-        self.plugin.parent_gui = self
-
-        # # # TEST # # #
-        memory_usage = psutil.Process(os.getpid()).memory_info().rss*10**-9
-        print('Current memory usage: {:.2f}GB'.format(memory_usage))
-        sys.stdout.flush()
-        # # # TEST # # #
 
         #self.populateGroups() - not needed
         self.updateExistingRoiSetList()
@@ -111,12 +93,12 @@ class DataGUI(QWidget):
 
         self.show()
 
-        # select data directory
-        # select series number
-        # select image data file
-        # draw rois
-        # save masks
-        # close gui?
+        ## select data directory
+        ## select series number
+        ## select image data file
+        ## draw rois
+        ## save masks
+        ## close gui?
 
         #TODO: add fano factor calc and plot?
 
@@ -268,7 +250,7 @@ class DataGUI(QWidget):
             item.addChild(child)
 
     def onTreeItemClicked(self, item, column):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         group_path = h5io.getPathFromTreeItem(self.groupTree.selectedItems()[0])
         self.clearRois()
         self.series_number = None
@@ -343,7 +325,7 @@ class DataGUI(QWidget):
             self.show()
 
     def selectedExistingRoiSet(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         roi_set_key = self.loadROIsComboBox.currentText()
         roi_set_path = self.existing_roi_set_paths[roi_set_key]
 
@@ -379,8 +361,8 @@ class DataGUI(QWidget):
         self.experiment_file_path_display.setText('..' + self.experiment_file_path[-24:])
 
     def initializeDataAnalysis(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
-        data_type = h5io.getDataType(file_path)
+        file_path = self.experiment_file_path
+        data_type = self.rig
         # Load plugin based on Rig name in hdf5 file
         if data_type == 'Bruker':
             from visanalysis.plugin import bruker
@@ -400,16 +382,8 @@ class DataGUI(QWidget):
         sys.stdout.flush()
         # # # TEST # # #
 
-    def attachData(self):
-        if self.experiment_file_path is not None:
-            file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
-            self.plugin.attachData(self.experiment_file_name, file_path, self.experiment_file_path)
-            print('Data attached')
-        else:
-            print('Select a data directory before attaching new data')
-
     def selectImageDataFile(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
 
         image_file_path, _ = QFileDialog.getOpenFileName(self, "Select image file")
         print('User selected image file at {}'.format(image_file_path))
@@ -436,7 +410,7 @@ class DataGUI(QWidget):
                 print('Select a data directory before drawing rois')
 
     def deleteSelectedGroup(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         group_path = h5io.getPathFromTreeItem(self.groupTree.selectedItems()[0])
         group_name = group_path.split('/')[-1]
 
@@ -455,7 +429,7 @@ class DataGUI(QWidget):
             print('Delete aborted')
 
     def populateGroups(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         self.group_dset_dict = h5io.getHierarchy(file_path)
         self._populateTree(self.groupTree, self.group_dset_dict)
 
@@ -483,7 +457,7 @@ class DataGUI(QWidget):
         self.tableAttributes.blockSignals(False)
 
     def update_attrs_to_file(self, item):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         group_path = h5io.getPathFromTreeItem(self.groupTree.selectedItems()[0])
 
         attr_key = self.tableAttributes.item(item.row(), 0).text()
@@ -613,14 +587,14 @@ class DataGUI(QWidget):
 # %% # # # # # # # # LOADING / SAVING / COMPUTING ROIS # # # # # # # # # # # # # # # # # # #
 
     def loadRois(self, roi_set_path):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         self.roi_response, self.roi_image, self.roi_path, self.roi_mask = self.plugin.loadRoiSet(file_path, roi_set_path)
         self.zSlider.setValue(0)
         self.zSlider.setMaximum(self.roi_image.shape[2]-1)
 
 
     def saveRois(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         roi_set_name = self.le_roiSetName.text()
         if roi_set_name in h5io.getAvailableRoiSetNames(file_path, self.series_number):
             buttonReply = QMessageBox.question(self,
