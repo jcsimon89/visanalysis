@@ -69,14 +69,14 @@ class DataGUI(QWidget):
 
         if rig == 'Bruker':
             from visanalysis.plugin import bruker
-            plug = bruker.BrukerPlugin()
+            self.plugin = bruker.BrukerPlugin()
             print('****Bruker plugin****')
         elif rig == 'AODscope':
             from visanalysis.plugin import aodscope
-            plug = aodscope.AodScopePlugin()
+            self.plugin = aodscope.AodScopePlugin()
             print('****AODscope plugin****')
         else:
-            plug = base_plugin.BasePlugin()
+            self.plugin = base_plugin.BasePlugin()
             print('****Unrecognized plugin name****')
 
         self.initUI()
