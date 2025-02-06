@@ -82,9 +82,9 @@ class DataGUI(QWidget):
             # define experiment_file_path - done
             # define self.experiment_file_name - done
             # define experiment_file_directory - done
-        self.currentExperimentLabel.setText(self.experiment_file_name)
+        #self.currentExperimentLabel.setText(self.experiment_file_name) - moved to self.initUI()
 
-        #self.populateGroups() - not needed
+        #self.populateGroups() - not needed anymore
         self.updateExistingRoiSetList()
         self.existing_roi_set_paths = self.plugin.getRoiSetPaths(self.experiment_file_path)  # dictionary of name: full path
         self.loadROIsComboBox.clear()
@@ -115,6 +115,7 @@ class DataGUI(QWidget):
 
         # Label with current expt file
         self.currentExperimentLabel = QLabel('')
+        self.currentExperimentLabel.setText(self.experiment_file_name)
 
         self.experiment_file_path_display = QLabel(str(self.experiment_file_path))
         self.experiment_file_path_display.setFont(QtGui.QFont('SansSerif', 8))
