@@ -79,6 +79,8 @@ if __name__ == '__main__':
 
     ## choose which series image file to use for drawing rois (whichever you chose, roi masks will be extracted and applied to all series in this script after finishing with gui)
 
+    series_number = 3 #last functional scan series in jacob's workflow as of 2/6/25
+
     os.system('python ' + gui_path
               + ' --experiment_file_directory ' + experiment_file_directory
               + ' --experiment_file_name ' + experiment_file_name
