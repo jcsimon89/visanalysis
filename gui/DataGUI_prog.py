@@ -109,7 +109,7 @@ class DataGUI(QWidget):
 
         # Label with current expt file
         self.currentExperimentLabel = QLabel('')
-        self.currentExperimentLabel.setText(self.experiment_file_name)
+        self.currentExperimentLabel.setText(self.experiment_file_name) #TODO: fix experiment label display
 
         self.experiment_file_path_display = QLabel(str(self.experiment_file_path))
         self.experiment_file_path_display.setFont(QtGui.QFont('SansSerif', 8))
@@ -338,17 +338,6 @@ class DataGUI(QWidget):
 
             # Update figures
             self.redrawRoiTraces()
-
-    def selectDataFile(self):
-        filePath, _ = QFileDialog.getOpenFileName(self, "Open experiment (hdf5) file")
-        self.experiment_file_name = os.path.split(filePath)[1].split('.')[0]
-        self.experiment_file_directory = os.path.split(filePath)[0]
-
-        if self.experiment_file_name != '':
-            self.currentExperimentLabel.setText(self.experiment_file_name)
-            self.initializeDataAnalysis()
-            self.populateGroups()
-            self.updateExistingRoiSetList()
 
     def selectDataDirectory(self):
         filePath = str(QFileDialog.getExistingDirectory(self, "Select data directory"))
