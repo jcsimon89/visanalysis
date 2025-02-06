@@ -38,10 +38,12 @@ class DataGUI(QWidget):
         parser.add_argument("--data_directory", nargs="?", help="Folder pointing to hdf5")
         parser.add_argument("--experiment_file_name", nargs="?", help="experiment_file_name.hdf5")
         parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
+        parser.add_argument("--series_number", nargs="?", help="integer starting with 1")
         args = parser.parse_args()
         data_directory = args.data_directory
         experiment_file_name = args.experiment_file_name
         rig = args.rig
+        series_number = args.series_number
         print('data_directory = ' + str(data_directory))
         print('experiment_file_name = ' + str(experiment_file_name))
         print('rig = ' + str(rig))
@@ -56,7 +58,7 @@ class DataGUI(QWidget):
         self.current_z_slice = 0
         self.current_channel = 1  # index
         self.image_series_name = ''
-        self.series_number = None
+        self.series_number = series_number
         self.roi_response = []
         self.roi_mask = []
         self.roi_path = []
@@ -80,6 +82,24 @@ class DataGUI(QWidget):
             print('****Unrecognized plugin name****')
 
         self.initUI()
+
+        # load expt file
+            # self.selectDataFile
+                # define self.experiment_file_name - done
+                # define experiment_file_directory - 
+
+        self.currentExperimentLabel.setText(self.experiment_file_name)
+        self.initializeDataAnalysis()
+        self.populateGroups()
+        self.updateExistingRoiSetList()
+        # select data directory
+        # select series number
+        # select image data file
+        # draw rois
+        # save masks
+        # close gui?
+
+        #TODO: add fano factor calc and plot?
 
     def initUI(self):
         self.grid = QGridLayout(self)
