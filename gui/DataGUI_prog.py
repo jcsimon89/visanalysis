@@ -87,7 +87,7 @@ class DataGUI(QWidget):
         #self.populateGroups() - not needed anymore
         self.updateExistingRoiSetList()
 
-        ## select data directory
+        ## select data directory - done (added functionality to self.initUI())
         ## select series number
         ## select image data file
         ## draw rois
@@ -110,8 +110,9 @@ class DataGUI(QWidget):
         # Label with current expt file
         self.currentExperimentLabel = QLabel('')
         self.currentExperimentLabel.setText(self.experiment_file_name) #TODO: fix experiment label display
-
-        self.experiment_file_path_display = QLabel(str(self.experiment_file_path))
+        
+        self.experiment_file_path_display = QLabel('')
+        self.experiment_file_path_display.setText('..' + self.experiment_file_path[-24:])
         self.experiment_file_path_display.setFont(QtGui.QFont('SansSerif', 8))
                    
         # File name display
@@ -338,11 +339,6 @@ class DataGUI(QWidget):
 
             # Update figures
             self.redrawRoiTraces()
-
-    def selectDataDirectory(self):
-        filePath = str(QFileDialog.getExistingDirectory(self, "Select data directory"))
-        self.experiment_file_path = filePath
-        self.experiment_file_path_display.setText('..' + self.experiment_file_path[-24:])
 
     def initializeDataAnalysis(self):
         file_path = self.experiment_file_path
