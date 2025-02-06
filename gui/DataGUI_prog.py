@@ -35,21 +35,24 @@ class DataGUI(QWidget):
         super().__init__()
         # parse shell arguments
         parser = argparse.ArgumentParser()
-        parser.add_argument("--data_directory", nargs="?", help="Folder pointing to hdf5")
+        parser.add_argument("--experiment_file_directory", nargs="?", help="Folder pointing to hdf5")
         parser.add_argument("--experiment_file_name", nargs="?", help="experiment_file_name.hdf5")
+        parser.add_argument("--experiment_file_path", nargs="?", help="complete path to .hdf5 file")
         parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
         parser.add_argument("--series_number", nargs="?", help="integer starting with 1")
+
         args = parser.parse_args()
-        data_directory = args.data_directory
+        experiment_file_directory = args.experiment_file_directory
         experiment_file_name = args.experiment_file_name
+        experiment_file_path = args.experiment_file_path
         rig = args.rig
         series_number = args.series_number
-        print('data_directory = ' + str(data_directory))
+        print('experiment_file_directory = ' + str(experiment_file_directory))
         print('experiment_file_name = ' + str(experiment_file_name))
         print('rig = ' + str(rig))
-        self.experiment_file_name = experiment_file_name
-        self.experiment_file_directory = None
-        self.data_directory = data_directory
+        self.experiment_file_name = experiment_file_name #name of hdf5 file, previously without .hdf5 but i'm changing that
+        self.experiment_file_directory = experiment_file_directory #path to folder that contains .hdf5 file
+        self.experiment_file_path = experiment_file_path #complete path to .hdf5 file
         self.max_rois = 200
         self.roi_type = 'freehand'
         self.roi_radius = None
@@ -84,14 +87,30 @@ class DataGUI(QWidget):
         self.initUI()
 
         # load expt file
-            # self.selectDataFile
-                # define self.experiment_file_name - done
-                # define experiment_file_directory - 
-
+        # self.selectDataFile
+            # define experiment_file_path - done
+            # define self.experiment_file_name - done
+            # define experiment_file_directory - done
         self.currentExperimentLabel.setText(self.experiment_file_name)
-        self.initializeDataAnalysis()
-        self.populateGroups()
+
+        #self.initializeDataAnalysis()
+        self.plugin.parent_gui = self
+
+        # # # TEST # # #
+        memory_usage = psutil.Process(os.getpid()).memory_info().rss*10**-9
+        print('Current memory usage: {:.2f}GB'.format(memory_usage))
+        sys.stdout.flush()
+        # # # TEST # # #
+
+        #self.populateGroups() - not needed
         self.updateExistingRoiSetList()
+        self.existing_roi_set_paths = self.plugin.getRoiSetPaths(self.experiment_file_path)  # dictionary of name: full path
+        self.loadROIsComboBox.clear()
+        for r_path in self.existing_roi_set_paths:
+            self.loadROIsComboBox.addItem(r_path)
+
+        self.show()
+
         # select data directory
         # select series number
         # select image data file
@@ -115,8 +134,8 @@ class DataGUI(QWidget):
         # Label with current expt file
         self.currentExperimentLabel = QLabel('')
 
-        self.data_directory_display = QLabel(str(self.data_directory))
-        self.data_directory_display.setFont(QtGui.QFont('SansSerif', 8))
+        self.experiment_file_path_display = QLabel(str(self.experiment_file_path))
+        self.experiment_file_path_display.setFont(QtGui.QFont('SansSerif', 8))
                    
         # File name display
         self.currentImageFileNameLabel = QLabel('')
@@ -258,16 +277,16 @@ class DataGUI(QWidget):
             if self.plugin.dataIsAttached(file_path, self.series_number):
                 self.plugin.updateImagingDataObject(self.experiment_file_directory, self.experiment_file_name, self.series_number)
             # look for image_file_name or ask user to select it
-            if self.data_directory is not None:
+            if self.experiment_file_path is not None:
                 image_file_name = h5io.readImageFileName(file_path, self.series_number)
                 if image_file_name is None or image_file_name == '':
                     image_file_path, _ = QFileDialog.getOpenFileName(self, "Select image file")
                     print('User selected image file at {}'.format(image_file_path))
                     image_file_name = os.path.split(image_file_path)[-1]
-                    self.data_directory = os.path.split(image_file_path)[:-1][0]
+                    self.experiment_file_path = os.path.split(image_file_path)[:-1][0]
                     h5io.attachImageFileName(file_path, self.series_number, image_file_name)
                     print('Attached image_file_name {} to series {}'.format(image_file_name, self.series_number))
-                    print('Data directory is {}'.format(self.data_directory))
+                    print('Data directory is {}'.format(self.experiment_file_path))
 
                 self.image_file_name = image_file_name
                 self.currentImageFileNameLabel.setText(self.image_file_name)
@@ -291,9 +310,9 @@ class DataGUI(QWidget):
 
         # show roi image
         if self.series_number is not None:  # Clicked on node of the tree associated with a single series
-            if self.data_directory is not None:  # user has selected a raw data directory
+            if self.experiment_file_path is not None:  # user has selected a raw data directory
                 if self.plugin.dataIsAttached(file_path, self.series_number):
-                    self.plugin.updateImageSeries(data_directory=self.data_directory,
+                    self.plugin.updateImageSeries(experiment_file_path=self.experiment_file_path,
                                                   image_file_name=self.image_file_name,
                                                   series_number=self.series_number,
                                                   channel=self.current_channel)
@@ -315,7 +334,7 @@ class DataGUI(QWidget):
 
     def updateExistingRoiSetList(self):
         if self.experiment_file_name is not None:
-            file_path = os.path.join(self.data_directory, self.experiment_file_name)
+            file_path = os.path.join(self.experiment_file_path, self.experiment_file_name)
             self.existing_roi_set_paths = self.plugin.getRoiSetPaths(file_path)  # dictionary of name: full path
             self.loadROIsComboBox.clear()
             for r_path in self.existing_roi_set_paths:
@@ -356,8 +375,8 @@ class DataGUI(QWidget):
 
     def selectDataDirectory(self):
         filePath = str(QFileDialog.getExistingDirectory(self, "Select data directory"))
-        self.data_directory = filePath
-        self.data_directory_display.setText('..' + self.data_directory[-24:])
+        self.experiment_file_path = filePath
+        self.experiment_file_path_display.setText('..' + self.experiment_file_path[-24:])
 
     def initializeDataAnalysis(self):
         file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
@@ -382,9 +401,9 @@ class DataGUI(QWidget):
         # # # TEST # # #
 
     def attachData(self):
-        if self.data_directory is not None:
+        if self.experiment_file_path is not None:
             file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
-            self.plugin.attachData(self.experiment_file_name, file_path, self.data_directory)
+            self.plugin.attachData(self.experiment_file_name, file_path, self.experiment_file_path)
             print('Data attached')
         else:
             print('Select a data directory before attaching new data')
@@ -395,17 +414,17 @@ class DataGUI(QWidget):
         image_file_path, _ = QFileDialog.getOpenFileName(self, "Select image file")
         print('User selected image file at {}'.format(image_file_path))
         self.image_file_name = os.path.split(image_file_path)[-1]
-        self.data_directory = os.path.split(image_file_path)[:-1][0]
+        self.experiment_file_path = os.path.split(image_file_path)[:-1][0]
         h5io.attachImageFileName(file_path, self.series_number, self.image_file_name)
         print('Attached image_file_name {} to series {}'.format(self.image_file_name, self.series_number))
-        print('Data directory is {}'.format(self.data_directory))
+        print('Data directory is {}'.format(self.experiment_file_path))
 
         self.currentImageFileNameLabel.setText(self.image_file_name)
 
         # show roi image
         if self.series_number is not None:
-            if self.data_directory is not None:  # user has selected a raw data directory
-                self.plugin.updateImageSeries(data_directory=self.data_directory,
+            if self.experiment_file_path is not None:  # user has selected a raw data directory
+                self.plugin.updateImageSeries(experiment_file_path=self.experiment_file_path,
                                               image_file_name=self.image_file_name,
                                               series_number=self.series_number,
                                               channel=self.current_channel)
@@ -668,8 +687,8 @@ class DataGUI(QWidget):
 
         # show roi image
         if self.series_number is not None:
-            if self.data_directory is not None:  # user has selected a raw data directory
-                self.plugin.updateImageSeries(data_directory=self.data_directory,
+            if self.experiment_file_path is not None:  # user has selected a raw data directory
+                self.plugin.updateImageSeries(experiment_file_path=self.experiment_file_path,
                                               image_file_name=self.image_file_name,
                                               series_number=self.series_number,
                                               channel=self.current_channel)
