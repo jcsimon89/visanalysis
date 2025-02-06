@@ -77,6 +77,8 @@ if __name__ == '__main__':
     
     gui_path = str(os.path.join(os.getcwd(),"gui/DataGUI_prog.py"))
 
+    ## choose which series image file to use for drawing rois (whichever you chose, roi masks will be extracted and applied to all series in this script after finishing with gui)
+
     os.system('python ' + gui_path
               + ' --experiment_file_directory ' + experiment_file_directory
               + ' --experiment_file_name ' + experiment_file_name
