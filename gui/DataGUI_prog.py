@@ -77,7 +77,7 @@ class DataGUI(QWidget):
 
         self.initUI()
 
-        ## load expt file
+        ## load expt file - done
         # from self.selectDataFile
             # define experiment_file_path - done
             # define self.experiment_file_name - done
@@ -86,12 +86,6 @@ class DataGUI(QWidget):
 
         #self.populateGroups() - not needed anymore
         self.updateExistingRoiSetList()
-        self.existing_roi_set_paths = self.plugin.getRoiSetPaths(self.experiment_file_path)  # dictionary of name: full path
-        self.loadROIsComboBox.clear()
-        for r_path in self.existing_roi_set_paths:
-            self.loadROIsComboBox.addItem(r_path)
-
-        self.show()
 
         ## select data directory
         ## select series number
@@ -317,7 +311,7 @@ class DataGUI(QWidget):
 
     def updateExistingRoiSetList(self):
         if self.experiment_file_name is not None:
-            file_path = os.path.join(self.experiment_file_path, self.experiment_file_name)
+            file_path = self.experiment_file_path
             self.existing_roi_set_paths = self.plugin.getRoiSetPaths(file_path)  # dictionary of name: full path
             self.loadROIsComboBox.clear()
             for r_path in self.existing_roi_set_paths:
