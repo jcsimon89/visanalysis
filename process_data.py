@@ -86,7 +86,7 @@ if __name__ == '__main__':
               + ' --experiment_file_name ' + experiment_file_name
               + ' --experiment_file_path ' + experiment_file_path
               + ' --rig ' + rig
-              + ' --series_number' + series_number)
+              + ' --series_number ' + series_number)
 
     # series_number = 1
 
