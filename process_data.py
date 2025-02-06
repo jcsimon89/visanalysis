@@ -12,7 +12,8 @@ import os
 import argparse
 import json
 import pathlib
-
+import matplotlib.pyplot as plt
+from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
 
 # call structure: python process_data.py --data_directory "path" --rig "rigID"
@@ -38,6 +39,7 @@ if __name__ == '__main__':
     json_file_name = 'fly.json'
     
     #extract info from fly.json 
+
     with open(pathlib.Path(data_directory, json_file_name), 'r') as file:
         fly_json = json.load(file)
 
@@ -48,7 +50,7 @@ if __name__ == '__main__':
 
     #TODO extract subject number from hdf5 or folder name? not sure if needed
 
-    print('experiment_file_name: ' + repr(os.path.join(data_directory, experiment_file_name + '.hdf5')))
+    print('experiment_file_name: ' + repr(os.path.join(data_directory, experiment_file_name)))
 
     if rig == 'Bruker':
         from visanalysis.plugin import bruker
@@ -66,24 +68,28 @@ if __name__ == '__main__':
 
     plug.attachData(experiment_file_name, data_directory)
 
-    print('Attached data to {}'.format(experiment_file_name))
+    print('Attached metadata to {}'.format(experiment_file_name))
 
-    ##draw roi masks on anat scan
+    ##draw roi masks using reduced GUI
     
-    image_file_name_anat = os.path.join('anat0', 'moco', structural_channel + '_moco_struct.nii')
+    gui_path = str(os.path.join(os.getcwd(),"gui/DataGUI_prog.py"))
+
+    os.system('python ' + gui_path
+              + ' --data_directory ' + data_directory
+              + ' --experiment_file_name ' + experiment_file_name
+              + ' --rig ' + rig)
+
+    # series_number = 1
+
+    # plug.updateImagingDataObject(data_directory,
+    #                             experiment_file_name,
+    #                             series_number)
+
     
-    series_number = 3 #?
-
-    plug.updateImagingDataObject(data_directory,
-                                experiment_file_name,
-                                series_number)
-
-
-
-    plug.loadImageSeries(data_directory, image_file_name_anat)
     
+    # plug.updateImageSeries(data_directory,
+    #                         image_file_name='TSeries-20210707-001_reg.nii',
+    #                         series_number=series_number,
+    #                         channel=0)
     
-    plug.updateImageSeries(data_directory=experiment_file_directory,
-                                     image_file_name='TSeries-20210707-001_reg.nii',
-                                     series_number=series_number,
-                                     channel=1)
+
