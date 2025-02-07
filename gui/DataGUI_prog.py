@@ -380,7 +380,7 @@ class DataGUI(QWidget):
         # show roi image
         if self.series_number is not None:
             if self.experiment_file_path is not None:  # user has selected a raw data directory
-                self.plugin.updateImageSeries(dataset_directory=self.experiment_file_path,
+                self.plugin.updateImageSeries(data_directory=self.experiment_file_path,
                                               image_file_name=self.image_file_name,
                                               series_number=self.series_number,
                                               channel=self.current_channel)
