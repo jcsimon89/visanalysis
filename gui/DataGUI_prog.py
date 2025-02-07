@@ -27,6 +27,7 @@ import numpy as np
 
 from visanalysis.util import plot_tools, h5io
 from visanalysis.plugin import base as base_plugin
+from visanalysis.analysis import imaging_data, shared_analysis
 
 
 class DataGUI(QWidget):
@@ -79,6 +80,8 @@ class DataGUI(QWidget):
         self.initializeDataAnalysis()
 
         self.initUI()
+
+        self.ImagingDataObject = imaging_data.ImagingDataObject(self.experiment_file_path, series_number, quiet=True)
 
         ## load expt file - done
         # from self.selectDataFile
