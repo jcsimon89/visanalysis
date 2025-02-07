@@ -596,7 +596,6 @@ class DataGUI(QWidget):
                                        roi_image=self.roi_image,
                                        roi_path=self.roi_path)
                 print('Saved roi set {} to series {}'.format(roi_set_name, self.series_number))
-                self.populateGroups()
                 self.updateExistingRoiSetList()
             else:
                 print('Overwrite aborted - pick a unique roi set name')
