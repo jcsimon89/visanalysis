@@ -588,11 +588,11 @@ class DataGUI(QWidget):
                                                QMessageBox.StandardButton.Yes |
                                                QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
             if buttonReply == QMessageBox.StandardButton.Yes:
-                self.plugin.saveRoiSet(file_path,
+                self.plugin.saveRoiSetMask(file_path,
                                        series_number=self.series_number,
                                        roi_set_name=roi_set_name,
                                        roi_mask=self.roi_mask,
-                                       roi_response=self.roi_response,
+                                       #roi_response=self.roi_response,
                                        roi_image=self.roi_image,
                                        roi_path=self.roi_path)
                 print('Saved roi set {} to series {}'.format(roi_set_name, self.series_number))

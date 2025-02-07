@@ -146,6 +146,37 @@ class BasePlugin():
                     current_roi_path_group.attrs['z_level'] = p.z_level
                     current_roi_path_group.attrs['channel'] = p.channel
 
+    def saveRoiSetMask(self, file_path, series_number,
+                   roi_set_name,
+                   roi_mask,
+                   #roi_response,
+                   roi_image,
+                   roi_path):
+
+        with h5py.File(file_path, 'r+') as experiment_file:
+            find_partial = functools.partial(h5io.find_series, sn=series_number)
+            epoch_run_group = experiment_file.visititems(find_partial)
+            parent_roi_group = epoch_run_group.require_group('rois')
+
+            # delete existing group to overwrite previously saved rois with this same name
+            if roi_set_name in parent_roi_group:
+                print('existing roi set found, deleting to overwrite')
+                del parent_roi_group[roi_set_name]
+        
+            current_roi_group = parent_roi_group.require_group(roi_set_name)
+
+            h5io.overwriteDataSet(current_roi_group, 'roi_mask', roi_mask)
+            #h5io.overwriteDataSet(current_roi_group, 'roi_response', roi_response)
+            h5io.overwriteDataSet(current_roi_group, 'roi_image', roi_image)       
+
+            for roi_ind, roi_paths in enumerate(roi_path):  # for roi indices
+                current_roi_index_group = current_roi_group.require_group('roipath_{}'.format(str(roi_ind).zfill(3)))
+                for p_ind, p in enumerate(roi_paths):  # for path objects within a roi index (for appended, noncontiguous rois)
+                    current_roi_path_group = current_roi_index_group.require_group('subpath_{}'.format(str(p_ind).zfill(3)))
+                    h5io.overwriteDataSet(current_roi_path_group, 'path_vertices', p.vertices)
+                    current_roi_path_group.attrs['z_level'] = p.z_level
+                    current_roi_path_group.attrs['channel'] = p.channel
+    
     def loadRoiSet(self, file_path, roi_set_path):
         def find_roi_path(name, obj):
             if 'roipath' in name:
