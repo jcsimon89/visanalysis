@@ -27,7 +27,6 @@ import numpy as np
 
 from visanalysis.util import plot_tools, h5io
 from visanalysis.plugin import base as base_plugin
-from visanalysis.analysis import imaging_data, shared_analysis
 
 
 class DataGUI(QWidget):
@@ -58,6 +57,7 @@ class DataGUI(QWidget):
         self.rig = rig 
         self.image_file_path = image_file_path
         self.image_file_name = os.path.split(image_file_path)[-1]
+        self.image_file_directory = os.path.split(image_file_path)[0]
         self.max_rois = 200
         self.roi_type = 'freehand'
         self.roi_radius = None
@@ -81,7 +81,7 @@ class DataGUI(QWidget):
 
         self.initUI()
 
-        self.ImagingDataObject = imaging_data.ImagingDataObject(self.experiment_file_path, series_number, quiet=True)
+        self.plugin.updateImagingDataObject(experiment_file_directory, experiment_file_name, series_number)
 
         ## load expt file - done
         # from self.selectDataFile
@@ -383,7 +383,7 @@ class DataGUI(QWidget):
         # show roi image
         if self.series_number is not None:
             if self.experiment_file_path is not None:  # user has selected a raw data directory
-                self.plugin.updateImageSeries(data_directory=self.experiment_file_path,
+                self.plugin.updateImageSeries(data_directory=self.image_file_directory,
                                               image_file_name=self.image_file_name,
                                               series_number=self.series_number,
                                               channel=self.current_channel)
