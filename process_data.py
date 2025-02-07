@@ -40,7 +40,7 @@ if __name__ == '__main__':
     experiment_file_name = 'fly.hdf5'
     json_file_name = 'fly.json'
 
-    #extract info from fly.json 
+    # extract info from fly.json 
 
     with open(pathlib.Path(experiment_file_directory, json_file_name), 'r') as file:
         fly_json = json.load(file)
@@ -72,6 +72,8 @@ if __name__ == '__main__':
 
     print('experiment_file_name: ' + repr(os.path.join(experiment_file_directory, experiment_file_name)))
 
+    ## determine correct visanalysis plugin
+
     if rig == 'Bruker':
         from visanalysis.plugin import bruker
         plug = bruker.BrukerPlugin()
@@ -94,8 +96,6 @@ if __name__ == '__main__':
     
     gui_path = str(os.path.join(os.getcwd(),"gui/DataGUI_prog.py"))
 
-    ## choose which series image file to use for drawing rois (whichever you chose, roi masks will be extracted and applied to all series in this script after finishing with gui)
-
     os.system('python ' + gui_path
               + ' --experiment_file_directory ' + experiment_file_directory
               + ' --experiment_file_name ' + experiment_file_name
@@ -104,17 +104,54 @@ if __name__ == '__main__':
               + ' --series_number ' + series_number
               + ' --image_file_path ' + image_file_path)
 
-    # series_number = 1
+    for series in range(number_of_series): #loop through all series
+    
+        #update imaging object with current series number
 
-    # plug.updateImagingDataObject(experiment_file_path,
-    #                             experiment_file_name,
-    #                             series_number)
+        plug.updateImagingDataObject(experiment_file_path,
+                                    experiment_file_name,
+                                    series)
 
-    
-    
-    # plug.updateImageSeries(experiment_file_path,
-    #                         image_file_name='TSeries-20210707-001_reg.nii',
-    #                         series_number=series_number,
-    #                         channel=0)
-    
+        for channel in channels: #loop through channels
+        
+            #associate raw image data
+            
+            plug.updateImageSeries(experiment_file_path,
+                                    image_file_name='TSeries-20210707-001_reg.nii',
+                                    series_number=series_number,
+                                    channel=0)
+        
+            
+            
+            
+            # Save region responses and mask to data file #TODO: make sure not to overwrite mask!
+            plug.saveRegionResponsesFromMask(file_path=file_path,
+                                                series_number=series_number,
+                                                response_set_name='mask_1',
+                                                mask=mask,
+                                                include_zero=False)
+
+            # Retrieve saved mask region responses from data file
+
+            ID = imaging_data.ImagingDataObject(file_path,
+                                        series_number,
+                                        quiet=False)
+
+            # Mask-aligned roi data gets saved under /aligned
+            # Hand-drawn roi data gets saved under /rois
+            ID.getRoiSetNames(roi_prefix='aligned')
+
+            # You can access the aligned region response data just as with hand-drawn rois, using the 'aligned' prefix argument
+            roi_data = ID.getRoiResponses('mask_1', roi_prefix='aligned')
+
+            # Plot region responses and masks
+            z_slice = 2
+            fh, ax = plt.subplots(2, 2, figsize=(8, 3),
+                                gridspec_kw={'width_ratios': [1, 4]})
+            [x.set_axis_off() for x in ax.ravel()]
+
+            colors = 'rgb'
+            for r_ind, response in enumerate(roi_data['roi_response']):
+                ax[r_ind, 0].imshow((roi_data['roi_mask'][:, :, z_slice] == (r_ind+1)).T)
+                ax[r_ind, 1].plot(response, color=colors[r_ind])
 
