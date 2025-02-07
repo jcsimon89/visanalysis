@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
 
-# call structure: python process_data.py --experiment_file_directory "path" --rig "rigID"
+# call structure: python process_data.py --experiment_file_directory "path" --rig "rigID" --series_number "series_number"
 
 # experiment_file_directory: string that contains the path to the folder that has the .hdf5 file
 # rig: rigID (Bruker or AODscope)
@@ -29,15 +29,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment_file_directory", nargs="?", help="Folder pointing to hdf5")
     parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
+    parser.add_argument("--series_number", nargs="?", help="number as string for series to use for roi selection")
     args = parser.parse_args()
 
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
+    series_number = args.series_number
 
     # hardcoded file names
     experiment_file_name = 'fly.hdf5'
     json_file_name = 'fly.json'
-    
+    image_file_path = ''
+
     # file_path (complete path to .hdf5 file)
     experiment_file_path = os.path.join(experiment_file_directory, experiment_file_name)
 
@@ -78,8 +81,6 @@ if __name__ == '__main__':
     gui_path = str(os.path.join(os.getcwd(),"gui/DataGUI_prog.py"))
 
     ## choose which series image file to use for drawing rois (whichever you chose, roi masks will be extracted and applied to all series in this script after finishing with gui)
-
-    series_number = '3' #last functional scan series in jacob's workflow as of 2/6/25
 
     os.system('python ' + gui_path
               + ' --experiment_file_directory ' + experiment_file_directory
