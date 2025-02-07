@@ -36,14 +36,6 @@ if __name__ == '__main__':
     rig = args.rig
     series_number = args.series_number
 
-    # hardcoded file names
-    experiment_file_name = 'fly.hdf5'
-    json_file_name = 'fly.json'
-    image_file_path = ''
-
-    # file_path (complete path to .hdf5 file)
-    experiment_file_path = os.path.join(experiment_file_directory, experiment_file_name)
-
     #extract info from fly.json 
 
     with open(pathlib.Path(experiment_file_directory, json_file_name), 'r') as file:
@@ -51,6 +43,26 @@ if __name__ == '__main__':
 
     structural_channel = fly_json['structural_channel']
     structural_channel_num = structural_channel.split('_')[-1]
+
+    # assuming structural channel is brightest functional channel and will be used for roi selection,
+    # currently only doing bg subtraction for channel 2
+
+    if structural_channel_num == '2':
+        image_file_name = 'channel_2_moco_bg_func.nii'
+    else:
+        image_file_name = 'channel_' + structural_channel_num + '_moco_func.nii'
+
+    # hardcoded file names
+    experiment_file_name = 'fly.hdf5'
+    json_file_name = 'fly.json'
+    image_directory = 'func' + str(series_number-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
+    image_file_path = os.path.join(experiment_file_directory, image_directory, image_file_name)
+    print('Image file location for roi selection: ' + str(image_file_path))
+
+    # file_path (complete path to .hdf5 file)
+    experiment_file_path = os.path.join(experiment_file_directory, experiment_file_name)
+
+    
 
     #TODO: other data needed from fly_json?
 
@@ -87,7 +99,8 @@ if __name__ == '__main__':
               + ' --experiment_file_name ' + experiment_file_name
               + ' --experiment_file_path ' + experiment_file_path
               + ' --rig ' + rig
-              + ' --series_number ' + series_number)
+              + ' --series_number ' + series_number
+              + ' --image_file_path ' + image_file_path)
 
     # series_number = 1
 
