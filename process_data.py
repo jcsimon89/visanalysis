@@ -61,7 +61,7 @@ if __name__ == '__main__':
     else:
         image_file_name = 'channel_' + structural_channel_num + '_moco_func.nii'
 
-    image_directory = 'func' + str(series_number-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
+    image_directory = 'func' + str(int(series_number)-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
     image_file_path = os.path.join(experiment_file_directory, image_directory, image_file_name)
     print('Image file location for roi selection: ' + str(image_file_path))
 
