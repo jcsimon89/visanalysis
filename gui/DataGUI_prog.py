@@ -600,15 +600,14 @@ class DataGUI(QWidget):
             else:
                 print('Overwrite aborted - pick a unique roi set name')
         else:
-            self.plugin.saveRoiSet(file_path,
+            self.plugin.saveRoiSetMask(file_path,
                                    series_number=self.series_number,
                                    roi_set_name=roi_set_name,
                                    roi_mask=self.roi_mask,
-                                   roi_response=self.roi_response,
+                                   #roi_response=self.roi_response,
                                    roi_image=self.roi_image,
                                    roi_path=self.roi_path)
             print('Saved roi set {} to series {}'.format(roi_set_name, self.series_number))
-            self.populateGroups()
             self.updateExistingRoiSetList()
 
     def deleteRoi(self):
