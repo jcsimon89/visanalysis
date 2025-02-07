@@ -15,6 +15,7 @@ import pathlib
 import matplotlib.pyplot as plt
 from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
+from visanalysis.analysis import imaging_data
 
 # call structure: python process_data.py --experiment_file_directory "path" --rig "rigID" --series_number "series_number"
 
@@ -61,8 +62,10 @@ if __name__ == '__main__':
     else:
         image_file_name = 'channel_' + structural_channel_num + '_moco_func.nii'
 
-    image_directory = 'func' + str(int(series_number)-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
-    image_file_path = os.path.join(experiment_file_directory, image_directory, image_file_name)
+    image_relative_directory = 'func' + str(int(series_number)-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
+    image_file_directory = os.path.join(experiment_file_directory, image_relative_directory)
+    image_file_path = os.path.join(image_file_directory, image_file_name)
+
     print('Image file location for roi selection: ' + str(image_file_path))
 
     # file_path (complete path to .hdf5 file)
@@ -104,42 +107,66 @@ if __name__ == '__main__':
               + ' --series_number ' + series_number
               + ' --image_file_path ' + image_file_path)
 
-    for series in range(number_of_series): #loop through all series
     
+    
+    # Retrieve saved mask region responses from data file
+
+    ID = imaging_data.ImagingDataObject(experiment_file_path,
+                                        series_number,
+                                        quiet=False)
+
+    roi_data = ID.getRoiMasks('roi_set')
+    roi_mask = roi_data['roi_mask']
+    roi_image = roi_data['roi_image']
+
+    print('roi_mask: ' + repr(roi_mask))
+    print('roi_image: ' + repr(roi_image))
+
+
+    for current_series in range(number_of_series)+1: #loop through all series (TODO: string or int?)
+        
         #update imaging object with current series number
 
         plug.updateImagingDataObject(experiment_file_path,
                                     experiment_file_name,
-                                    series)
+                                    current_series)
 
-        for channel in channels: #loop through channels
-        
+        for channel in channel_num: #loop through channels (TODO: string or int?)
+            
+            #derive image file name and path
+
+            if channel == '2':
+                image_file_name = 'channel_2_moco_bg_func.nii'
+            elif channel == '1':
+                image_file_name = 'channel_' + channel + '_moco_func.nii'
+            else:
+                print('not able to identify channel of image file')
+
+            image_relative_directory = 'func' + str(int(current_series)-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
+            image_file_directory = os.path.join(experiment_file_directory, image_relative_directory)
+            image_file_path = os.path.join(image_file_directory, image_file_name)
+            
             #associate raw image data
-            
-            plug.updateImageSeries(experiment_file_path,
-                                    image_file_name='TSeries-20210707-001_reg.nii',
-                                    series_number=series_number,
-                                    channel=0)
+
+            plug.updateImageSeries(data_directory=image_file_directory,
+                                    image_file_name=image_file_name,
+                                    series_number=current_series,
+                                    channel=channel)
         
-            
-            
             
             # Save region responses and mask to data file #TODO: make sure not to overwrite mask!
-            plug.saveRegionResponsesFromMask(file_path=file_path,
+
+            response_set_name = 'mask_' + channel
+
+            plug.saveRegionResponsesFromMask(file_path=experiment_file_path,
                                                 series_number=series_number,
-                                                response_set_name='mask_1',
-                                                mask=mask,
+                                                response_set_name=response_set_name,
+                                                mask=roi_mask,
                                                 include_zero=False)
-
-            # Retrieve saved mask region responses from data file
-
-            ID = imaging_data.ImagingDataObject(file_path,
-                                        series_number,
-                                        quiet=False)
 
             # Mask-aligned roi data gets saved under /aligned
             # Hand-drawn roi data gets saved under /rois
-            ID.getRoiSetNames(roi_prefix='aligned')
+            ID.getRoiSetNames(roi_prefix='roi')
 
             # You can access the aligned region response data just as with hand-drawn rois, using the 'aligned' prefix argument
             roi_data = ID.getRoiResponses('mask_1', roi_prefix='aligned')
