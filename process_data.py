@@ -46,8 +46,19 @@ if __name__ == '__main__':
     with open(pathlib.Path(experiment_file_directory, json_file_name), 'r') as file:
         fly_json = json.load(file)
 
-    structural_channel = fly_json['structural_channel']
-    structural_channel_num = structural_channel.split('_')[-1]
+    struct_channel = [fly_json['structural_channel']] # can only be one structural channel
+    print(type(struct_channel))
+    struct_channel_num = [struct_channel[0].split('_')[-1]] #datatype=list of strings
+    print(type(struct_channel_num))
+    print('struct_channel = ' + str(struct_channel))
+    print('struct_channel_num = ' + str(struct_channel_num))
+
+    func_channels = fly_json['functional_channel'] # can be many functional channels
+    func_channels = func_channels.replace("[","").replace("]","").replace("'","").split(",") # weird format in json imports as one big string, converting to list of strings #datatype=list of strings
+    print('length of func_channels: '+str(len(func_channels)))
+    func_channels_num = [func_channels[i].split('_')[-1] for i in range(len(func_channels))] #datatype=list of strings
+    print('func_channels = ' + str(func_channels))
+    print('func_channel_num = ' + str(func_channels_num))
 
     #TODO: other data needed from fly_json?
 
@@ -57,10 +68,10 @@ if __name__ == '__main__':
         # assuming structural channel is brightest functional channel and will be used for roi selection,
         # currently only doing bg subtraction for channel 2
 
-    if structural_channel_num == '2':
+    if struct_channel_num[0] == '2':
         image_file_name = 'channel_2_moco_bg_func.nii'
     else:
-        image_file_name = 'channel_' + structural_channel_num + '_moco_func.nii'
+        image_file_name = 'channel_' + struct_channel_num[0] + '_moco_func.nii'
 
     image_relative_directory = 'func' + str(int(series_number)-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
     image_file_directory = os.path.join(experiment_file_directory, image_relative_directory)
@@ -122,8 +133,14 @@ if __name__ == '__main__':
     print('roi_mask: ' + repr(roi_mask))
     print('roi_image: ' + repr(roi_image))
 
+   
+    ## extract other important metadata for analysis
+    series_num = plug.getSeriesNumbers(experiment_file_path)
+    print('series_num '+ str(series_num)) # string (ie '1', '2', etc.)?
 
-    for current_series in range(number_of_series)+1: #loop through all series (TODO: string or int?)
+
+
+    for current_series in range(series_numbers)+1: #loop through all series (TODO: string or int? TODO: get number_of_series from fly.hdf5)
         
         #update imaging object with current series number
 
@@ -131,14 +148,14 @@ if __name__ == '__main__':
                                     experiment_file_name,
                                     current_series)
 
-        for channel in channel_num: #loop through channels (TODO: string or int?)
+        for current_channel in channel_num: #loop through channels (TODO: string or int? TODO: get channel_num from fly.json)
             
             #derive image file name and path
 
-            if channel == '2':
+            if current_channel == '2':
                 image_file_name = 'channel_2_moco_bg_func.nii'
-            elif channel == '1':
-                image_file_name = 'channel_' + channel + '_moco_func.nii'
+            elif current_channel == '1':
+                image_file_name = 'channel_' + current_channel + '_moco_func.nii'
             else:
                 print('not able to identify channel of image file')
 
@@ -151,7 +168,7 @@ if __name__ == '__main__':
             plug.updateImageSeries(data_directory=image_file_directory,
                                     image_file_name=image_file_name,
                                     series_number=current_series,
-                                    channel=channel)
+                                    channel=current_channel)
         
             
             # Save region responses and mask to data file #TODO: make sure not to overwrite mask!
@@ -166,19 +183,19 @@ if __name__ == '__main__':
 
             # Mask-aligned roi data gets saved under /aligned
             # Hand-drawn roi data gets saved under /rois
-            ID.getRoiSetNames(roi_prefix='roi')
+            ID.getRoiSetNames(roi_prefix='rois')
 
             # You can access the aligned region response data just as with hand-drawn rois, using the 'aligned' prefix argument
-            roi_data = ID.getRoiResponses('mask_1', roi_prefix='aligned')
+            roi_data = ID.getRoiResponses(response_set_name, roi_prefix='rois')
 
-            # Plot region responses and masks
-            z_slice = 2
-            fh, ax = plt.subplots(2, 2, figsize=(8, 3),
-                                gridspec_kw={'width_ratios': [1, 4]})
-            [x.set_axis_off() for x in ax.ravel()]
+            #TODO: Plot region responses and masks
 
-            colors = 'rgb'
-            for r_ind, response in enumerate(roi_data['roi_response']):
-                ax[r_ind, 0].imshow((roi_data['roi_mask'][:, :, z_slice] == (r_ind+1)).T)
-                ax[r_ind, 1].plot(response, color=colors[r_ind])
+            #TODO: select rois to keep (based on results from which series or all?)
+            #TODO: resave hdf5 with selected rois only
+            #
 
+
+            
+
+# how to select rois: for each roi, could plot both channel responses for series 1, 2, 3 and then pick
+# could instead just look at search stimulus
