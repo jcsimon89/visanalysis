@@ -839,6 +839,42 @@ class ImagingDataObject:
             roi_data["time_vector"] = time_vector
 
         return roi_data
+    
+    def getRoiMasks(
+        self,
+        roi_set_name,
+        roi_prefix="rois",
+    ):
+        """
+        Get responses for indicated roi
+        Params:
+            -roi_set_name: (str) name of roi set to pull out
+            -background_subtraction: (Bool) subtract background roi values.
+                There must be a roi set for this series called 'bg'
+            -roi_prefix: 'rois' or 'aligned'
+                    'rois' used for hand-drawn ROIs, with path objects
+                    'aligned' used for mask-generated, no path objects for drawing
+
+        Returns:
+            roi_data: dict, keys:
+                        roi_response: ndarry, shape = (rois, time)
+                        roi_mask: list of ndarray masks, one for each roi in roi set
+                        roi_image: ndarray image showing roi overlay
+                        epoch_response: ndarray, shape = (rois, epochs, time)
+                        time_vector: 1d array, time values for epoch_response traces (sec)
+        """
+        roi_data = {}
+        with h5py.File(self.file_path, "r") as experiment_file:
+            find_partial = functools.partial(h5io.find_series, sn=self.series_number)
+            roi_parent_group = experiment_file.visititems(find_partial)[roi_prefix]
+            assert (
+                roi_set_name in roi_parent_group
+            ), 'roi_set_name "{}" not found in roi group'.format(roi_set_name)
+            roi_set_group = roi_parent_group[roi_set_name]
+            roi_data["roi_mask"] = roi_set_group.get("roi_mask")[:]
+            roi_data["roi_image"] = roi_set_group.get("roi_image")[:]
+
+        return roi_data
 
     def getEpochResponseMatrix(self, region_response, dff=True):
         """
