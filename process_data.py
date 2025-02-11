@@ -211,8 +211,8 @@ if __name__ == '__main__':
 
             # Mask-aligned roi data gets saved under /aligned
             # Hand-drawn roi data gets saved under /rois
-            ID.getRoiSetNames(roi_prefix='aligned')
-
+            print(ID.getRoiSetNames(roi_prefix='rois'))
+            print(ID.getRoiSetNames(roi_prefix='aligned'))
             # You can access the aligned region response data just as with hand-drawn rois, using the 'aligned' prefix argument
             roi_data = ID.getRoiResponses(response_set_name, roi_prefix='aligned')
 
