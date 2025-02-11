@@ -12,6 +12,7 @@ import os
 import argparse
 import json
 import pathlib
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
@@ -47,15 +48,11 @@ if __name__ == '__main__':
         fly_json = json.load(file)
 
     struct_channel = [fly_json['structural_channel']] # can only be one structural channel
-    print(type(struct_channel))
     struct_channel_num = [struct_channel[0].split('_')[-1]] #datatype=list of strings
-    print(type(struct_channel_num))
     print('struct_channel = ' + str(struct_channel))
     print('struct_channel_num = ' + str(struct_channel_num))
 
-    func_channels = fly_json['functional_channel'] # can be many functional channels
-    func_channels = func_channels.replace("[","").replace("]","").replace("'","").split(",") # weird format in json imports as one big string, converting to list of strings #datatype=list of strings
-    print('length of func_channels: '+str(len(func_channels)))
+    func_channels = fly_json['functional_channel'].replace("[","").replace("]","").replace("'","").split(",") # can be many functional channels - weird format in snake_brainsss json imports as one big string, cleaning up and converting to list of strings #datatype=list of strings
     func_channels_num = [func_channels[i].split('_')[-1] for i in range(len(func_channels))] #datatype=list of strings
     print('func_channels = ' + str(func_channels))
     print('func_channel_num = ' + str(func_channels_num))
@@ -126,44 +123,68 @@ if __name__ == '__main__':
                                         series_number,
                                         quiet=False)
 
-    roi_data = ID.getRoiMasks('roi_set')
-    roi_mask = roi_data['roi_mask']
-    roi_image = roi_data['roi_image']
+    roi_data = ID.getRoiMasks('roi_set_name')
+    roi_mask_binary = roi_data['roi_mask'] #shape: roi_index, x, y ,(z)
+    roi_image = roi_data['roi_image'] #shape: x,y,(z)
 
-    print('roi_mask: ' + repr(roi_mask))
-    print('roi_image: ' + repr(roi_image))
+    print('dimensions of roi_image: ' + str(np.shape(roi_image)))
+    print('dimensions of roi_mask_binary: ' + str(np.shape(roi_mask_binary)))
 
+    # figure out if data is volume or slice
+    data_spacial_dim = len(roi_image.shape)
    
+    # convert roi mask to numbers for each separate roi
+    roi_mask = np.zeros(roi_mask_binary.shape[1:])
+    print('dimensions of roi_mask: ' + str(np.shape(roi_mask))) # shape:x,y,(z)
+
+    if data_spacial_dim == 3: #data is a volume
+        for roi_ind in range(roi_mask_binary.shape[0]):
+            for i in range(roi_mask_binary.shape[1]):
+                for j in range(roi_mask_binary.shape[2]):
+                    for k in range(roi_mask_binary.shape[3]):
+                        if roi_mask_binary[roi_ind,i,j,k] == True:
+                            roi_mask[i,j,k]=roi_ind+1 #since roi_ind starts at 0 and we want to label the first roi with value=1
+
+    elif data_spacial_dim == 2: #data is a slice
+        for roi_ind in range(roi_mask_binary.shape[0]):
+            for i in range(roi_mask_binary.shape[1]):
+                for j in range(roi_mask_binary.shape[2]):
+                    if roi_mask_binary[roi_ind,i,j] == True:
+                            roi_mask[i,j]=roi_ind+1 #since roi_ind starts at 0 and we want to label the first roi with value=1
+    else:
+        print('data does not appear to be a volume or a slice according to the dimensions of roi_image')
+
+    print('unique values in roi_mask: ' + str(np.unique(roi_mask)))
+
     ## extract other important metadata for analysis
-    series_num = plug.getSeriesNumbers(experiment_file_path)
-    print('series_num '+ str(series_num)) # string (ie '1', '2', etc.)?
+    series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path))) # datatype = list of strings
+    print('series_num = '+ str(series_num))
 
+    ## start response extraction and analysis
 
-
-    for current_series in range(series_numbers)+1: #loop through all series (TODO: string or int? TODO: get number_of_series from fly.hdf5)
+    for current_series in series_num: #loop through all series
         
         #update imaging object with current series number
 
-        plug.updateImagingDataObject(experiment_file_path,
+        plug.updateImagingDataObject(experiment_file_directory,
                                     experiment_file_name,
                                     current_series)
 
-        for current_channel in channel_num: #loop through channels (TODO: string or int? TODO: get channel_num from fly.json)
+        for current_channel in func_channels_num: #loop through channels (TODO: string or int? TODO: get channel_num from fly.json)
             
             #derive image file name and path
 
             if current_channel == '2':
                 image_file_name = 'channel_2_moco_bg_func.nii'
-            elif current_channel == '1':
-                image_file_name = 'channel_' + current_channel + '_moco_func.nii'
             else:
-                print('not able to identify channel of image file')
+                image_file_name = 'channel_' + current_channel + '_moco_func.nii'
+
 
             image_relative_directory = 'func' + str(int(current_series)-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
             image_file_directory = os.path.join(experiment_file_directory, image_relative_directory)
             image_file_path = os.path.join(image_file_directory, image_file_name)
             
-            #associate raw image data
+            #associate image data
 
             plug.updateImageSeries(data_directory=image_file_directory,
                                     image_file_name=image_file_name,
@@ -173,7 +194,7 @@ if __name__ == '__main__':
             
             # Save region responses and mask to data file #TODO: make sure not to overwrite mask!
 
-            response_set_name = 'mask_' + channel
+            response_set_name = 'mask_ch' + current_channel
 
             plug.saveRegionResponsesFromMask(file_path=experiment_file_path,
                                                 series_number=series_number,
@@ -183,10 +204,10 @@ if __name__ == '__main__':
 
             # Mask-aligned roi data gets saved under /aligned
             # Hand-drawn roi data gets saved under /rois
-            ID.getRoiSetNames(roi_prefix='rois')
+            ID.getRoiSetNames(roi_prefix='aligned')
 
             # You can access the aligned region response data just as with hand-drawn rois, using the 'aligned' prefix argument
-            roi_data = ID.getRoiResponses(response_set_name, roi_prefix='rois')
+            roi_data = ID.getRoiResponses(response_set_name, roi_prefix='aligned')
 
             #TODO: Plot region responses and masks
 
