@@ -95,7 +95,7 @@ class DataGUI(QWidget):
 
         ## select data directory - done (added functionality to self.initUI())
         ## select series number - done, passed argument from process_data.py
-        ## select image data file
+        ## select image data file - done
 
         self.selectImageDataFile()
 
