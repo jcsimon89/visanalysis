@@ -160,16 +160,30 @@ if __name__ == '__main__':
     series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path))) # datatype = list of strings
     print('series_num = '+ str(series_num))
 
+    ## create new data object
+
+    if rig == 'Bruker':
+        from visanalysis.plugin import bruker
+        data_object = bruker.BrukerPlugin()
+        print('****Bruker plugin****')
+    elif rig == 'AODscope':
+        from visanalysis.plugin import aodscope
+        data_object = aodscope.AodScopePlugin()
+        print('****AODscope plugin****')
+    else:
+        data_object = base_plugin.BasePlugin()
+        print('****Unrecognized plugin name****')
+
     ## start response extraction and analysis
 
     for current_series in series_num: #loop through all series
         
         #update imaging object with current series number
 
-        plug.updateImagingDataObject(experiment_file_directory,
+        data_object.updateImagingDataObject(experiment_file_directory,
                                     experiment_file_name,
                                     current_series)
-
+        print('data_object.current_series(): ' + str(data_object.current_series))
         for current_channel in func_channels_num: #loop through channels (TODO: string or int? TODO: get channel_num from fly.json)
             
             #derive image file name and path
@@ -186,7 +200,7 @@ if __name__ == '__main__':
             
             #associate image data
 
-            plug.updateImageSeries(data_directory=image_file_directory,
+            data_object.updateImageSeries(data_directory=image_file_directory,
                                     image_file_name=image_file_name,
                                     series_number=current_series,
                                     channel=current_channel)
@@ -196,14 +210,19 @@ if __name__ == '__main__':
 
             response_set_name = 'mask_ch' + current_channel
 
-            plug.saveRegionResponsesFromMask(file_path=experiment_file_path,
+            data_object.saveRegionResponsesFromMask(file_path=experiment_file_path,
                                                 series_number=series_number,
                                                 response_set_name=response_set_name,
                                                 mask=roi_mask,
                                                 include_zero=False)
 
+            ID = imaging_data.ImagingDataObject(experiment_file_path,
+                                        current_series,
+                                        quiet=False)
+            
             # Mask-aligned roi data gets saved under /aligned
             # Hand-drawn roi data gets saved under /rois
+            print('data_object.current_series: ' + str(data_object.current_series))
             ID.getRoiSetNames(roi_prefix='aligned')
 
             # You can access the aligned region response data just as with hand-drawn rois, using the 'aligned' prefix argument
