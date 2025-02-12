@@ -25,9 +25,11 @@ if __name__ == '__main__':
     ## parse shell arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment_file_directory", nargs="?", help="Folder pointing to hdf5")
+    parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
     args = parser.parse_args()
 
     experiment_file_directory = args.experiment_file_directory
+    rig = args.rig
 
     # hardcoded file names
     experiment_file_name = 'fly.hdf5'
@@ -55,6 +57,8 @@ if __name__ == '__main__':
 
     print('experiment_file_name: ' + repr(os.path.join(experiment_file_directory, experiment_file_name)))
 
+    # 
+    
     ## start response analysis
 
     for current_series in series_num: #loop through all series
