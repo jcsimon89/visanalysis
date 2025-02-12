@@ -53,7 +53,7 @@ if __name__ == '__main__':
     print('struct_channel_num = ' + str(struct_channel_num))
 
     func_channels = fly_json['functional_channel'].replace("[","").replace("]","").replace("'","").split(",") # can be many functional channels - weird format in snake_brainsss json imports as one big string, cleaning up and converting to list of strings #datatype=list of strings
-    func_channels_num = [func_channels[i].split('_')[-1] for i in range(len(func_channels))] #datatype=list of strings
+    func_channels_num = [func_channels[i].split('_')[-1] for i in range(len(func_channels))] #datatype = list of strings, but individual channel numbers will be converted to int before using methods
     print('func_channels = ' + str(func_channels))
     print('func_channel_num = ' + str(func_channels_num))
 
@@ -157,28 +157,28 @@ if __name__ == '__main__':
     print('unique values in roi_mask: ' + str(np.unique(roi_mask)))
 
     ## extract other important metadata for analysis
-    series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path))) # datatype = list of strings
+    series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path))) # datatype = list of strings but individual series numbers will be converted to int before using methods
     print('series_num = '+ str(series_num))
 
     ## start response extraction and analysis
 
     for current_series in series_num: #loop through all series
-        
+        current_series = int(current_series) # methods expect series number to be datatype int
         #update imaging object with current series number
 
-        plug.updateImagingDataObject(experiment_file_directory,
+        plug.updateImagingDataObject(experiment_file_directory, #NOTE: does this set current_series in imaging data object? I think so (instantiates self.ImagingObject with current_series)
                                     experiment_file_name,
                                     current_series)
         
 
         for current_channel in func_channels_num: #loop through channels (TODO: string or int? TODO: get channel_num from fly.json)
-            
+            current_channel = int(current_channel) # methods expect channel number to be datatype int
             #derive image file name and path
 
-            if current_channel == '2':
-                image_file_name = 'channel_2_moco_bg_func.nii'
+            if current_channel == 2:  # assuming we only do background subtraction on channel 2 (green)
+                image_file_name = 'channel_' + str(current_channel) + '_moco_bg_func.nii' 
             else:
-                image_file_name = 'channel_' + current_channel + '_moco_func.nii'
+                image_file_name = 'channel_' + str(current_channel) + '_moco_func.nii' 
 
 
             image_relative_directory = 'func' + str(int(current_series)-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
@@ -195,29 +195,37 @@ if __name__ == '__main__':
             
             # Save region responses and mask to data file #TODO: make sure not to overwrite mask!
 
-            response_set_name = 'mask_ch' + current_channel
+            response_set_name = 'mask_ch' + str(current_channel)
 
             plug.saveRegionResponsesFromMask(file_path=experiment_file_path,
-                                                series_number=series_number,
+                                                series_number=current_series,
                                                 response_set_name=response_set_name,
                                                 mask=roi_mask,
                                                 include_zero=False)
 
-            # ID = imaging_data.ImagingDataObject(experiment_file_path,
-            #                             current_series,
-            #                             quiet=False)
-            
-            ID = plug.ImagingDataObject
+            ID = imaging_data.ImagingDataObject(experiment_file_path,
+                                        current_series,
+                                        quiet=False)
 
             # Mask-aligned roi data gets saved under /aligned
             # Hand-drawn roi data gets saved under /rois
-            print(ID.getRoiSetNames(roi_prefix='rois'))
-            print(ID.getRoiSetNames(roi_prefix='aligned'))
+
+            ID.getRoiSetNames(roi_prefix='aligned')
+
             # You can access the aligned region response data just as with hand-drawn rois, using the 'aligned' prefix argument
             roi_data = ID.getRoiResponses(response_set_name, roi_prefix='aligned')
 
-            #TODO: Plot region responses and masks
+            #TODO: Plot region responses and masks, save fig
+            z_slice = 2
+            fh, ax = plt.subplots(len(roi_data), 2, figsize=(8, 3),
+                      gridspec_kw={'width_ratios': [1, 4]})
+            [x.set_axis_off() for x in ax.ravel()]
 
+            colors = 'rgb'
+            for r_ind, response in enumerate(roi_data['roi_response']):
+                print('r_ind = ' + str(r_ind))
+                ax[r_ind, 0].imshow((roi_mask[:, :, z_slice] == (r_ind+1)).T)
+                ax[r_ind, 1].plot(response, color=colors[r_ind])
             #TODO: select rois to keep (based on results from which series or all?)
             #TODO: resave hdf5 with selected rois only
             #
@@ -225,5 +233,4 @@ if __name__ == '__main__':
 
             
 
-# how to select rois: for each roi, could plot both channel responses for series 1, 2, 3 and then pick
-# could instead just look at search stimulus
+# how to select rois: for each roi, could plot both channel responses for all series and then pick
