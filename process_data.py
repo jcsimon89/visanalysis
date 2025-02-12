@@ -81,7 +81,7 @@ if __name__ == '__main__':
 
     #TODO extract subject number from hdf5 or folder name? not sure if needed
 
-    print('experiment_file_name: ' + repr(os.path.join(experiment_file_directory, experiment_file_name)))
+    print('experiment_file_path: ' + repr(os.path.join(experiment_file_directory, experiment_file_name)))
 
     ## determine correct visanalysis plugin
 
