@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
+import h5py
 
 # call structure: python analyze_data.py --experiment_file_directory "path" --rig "rigID"
 
@@ -159,40 +160,41 @@ if __name__ == '__main__':
                 2 rows (per condition (light/dark flash))
                 2 columns (per channel)
         responses:    
-            2. avg roi intensity (over imaging session)
-            3. individual responses (short flashes)
+            2. and 3. avg roi intensity (over imaging session)
+            4. individual responses (short flashes)
                 two channel responses for 2 series, plus avg roi intensity over entire time, 
                 2 rows (per light condition (light/dark))
                 2 columns (per channel)
-            4. individual responses (long flashes)
+            5. individual responses (long flashes)
                 two channel responses for 2 series, plus avg roi intensity over entire time, 
                 2 rows (per light condition (light/dark))
                 2 columns (per channel)
-            5. mean responses (short flashes)
+            6. mean responses (short flashes)
                 two channel responses for 2 series, plus avg roi intensity over entire time, 
                 2 rows (per light condition (light/dark))
                 2 columns (per channel)
-            6. mean responses (long flashes)
+            7. mean responses (long flashes)
                 two channel responses for 2 series, plus avg roi intensity over entire time, 
                 2 rows (per light condition (light/dark))
                 2 columns (per channel)
         
         roi_image: 
-            7. all rois overlayed on each series functional scan (structural channel)
+            8. all rois overlayed on each series functional scan (structural channel)
                 4 panel subplot (one per slice if 3d)
-            8. each roi overlayed on each series functional scan (structural channel)
+            9. each roi overlayed on each series functional scan (structural channel)
                 4 panel subplot
 
         save: raw_rois folder
             files:
                 1. search_mean_response_roi_#_
-                2. mean_intensity_over_session_roi_#_
-                3. individual_responses_flash_25ms_roi_#_
-                4. individual_responses_flash_300ms_roi_#_
-                5. mean_response_flash_25ms_roi_#_
-                6. mean_response_flash_300ms_roi_#_
-                7. all_rois_image_slice_#_
-                8. roi_image_slice_#_
+                2. mean_intensity_over_series_2_roi_#_
+                3. mean_intensity_over_series_3_roi_#_
+                4. individual_responses_flash_25ms_roi_#_
+                5. individual_responses_flash_300ms_roi_#_
+                6. mean_response_flash_25ms_roi_#_
+                7. mean_response_flash_300ms_roi_#_
+                8. all_rois_image_slice_#_
+                9. roi_image_slice_#_
 
 
         repeat for final_rois after roi selection
@@ -257,5 +259,26 @@ if __name__ == '__main__':
 
     ##TODO: select rois to keep
     keep_roi_ind = [] # enter good rois manually for now
+    roi_data_final = roi_data[keep_roi_ind]
+
+    ##TODO: more plotting, figure saving
 
     ##TODO: resave hdf5 with selected rois only
+
+    h5r=h5py.File(experiment_file_path, 'r')
+    final_hdf5_save_path = os.path.join(experiment_file_directory + 'fly_final.hdf5')
+    
+    with h5py.File(final_hdf5_save_path, 'w') as h5w:
+        for obj in h5r.keys():        
+            h5r.copy(obj, h5w)
+        for current_series in series_num: #loop through all series
+            sn = 'sn' + current_series
+            for current_channel in func_channels_num: #loop through channels
+                ch = 'ch' + current_channel
+                h5w.create_dataset('/Subjects/1/epoch_runs/series_00' + current_series + 
+                '/aligned/mask_ch' + current_channel + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
+    
+    h5r.close()
+
+#path to data in h5 file: /Subjects/1/epoch_runs/series_003/aligned/mask_ch1/roi_response
+    
