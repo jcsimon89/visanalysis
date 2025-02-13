@@ -95,6 +95,10 @@ if __name__ == '__main__':
     run_parameters = {}
     epoch_parameters = {}
     acquisition_metadata = {}
+    unique_intensity_values = {}
+    mean_response = {}
+    sem_response = {}
+    trial_response_by_stimulus = {}
 
     ## Extract all series and channel data into dicts for analysis
 
@@ -128,8 +132,8 @@ if __name__ == '__main__':
 
         # acquisition_metadata: dict (key = sn) of dicts (key = parameter name)
         acquisition_metadata[sn] = ID.getAcquisitionMetadata()
-        #print('acquisition_metadata keys: ' + repr(epoch_parameters.keys()))
-        #print('acquisition_metadata[sn] keys: ' + repr(epoch_parameters[sn].keys()))
+        #print('acquisition_metadata keys: ' + repr(acquisition_metadata.keys()))
+        #print('acquisition_metadata[sn] keys: ' + repr(acquisition_metadata[sn].keys()))
 
 
         for current_channel in func_channels_num: #loop through channels
@@ -147,6 +151,22 @@ if __name__ == '__main__':
             roi_data[sn,ch] = ID.getRoiResponses(response_set_name, roi_prefix='aligned') 
             #print('roi_data keys: ' + repr(roi_data.keys()))
             #print('roi_data[sn,ch] keys: ' + repr(roi_data[sn,ch].keys()))
+            
+            unique_intensity_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ...
+            ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')            
+            # unique_intensity_values: dict (key = sn) of dicts? (key = parameter name)
+            # mean_response: dict (key = sn,ch) of dicts? (key = parameter name)
+            # sem_response: dict (key = sn,ch) of dicts? (key = parameter name)
+            # trial_response_by_stimulus: dict (key = sn,ch) of dicts? (key = parameter name)
+
+            print('unique_intensity_values keys: ' + repr(unique_intensity_values.keys()))
+            print('unique_intensity_values[sn] keys: ' + repr(unique_intensity_values[sn].keys()))
+            print('mean_response keys: ' + repr(mean_response.keys()))
+            print('mean_response[sn,ch] keys: ' + repr(mean_response[sn,ch].keys()))
+            print('sem_response keys: ' + repr(sem_response.keys()))
+            print('sem_response[sn,ch] keys: ' + repr(sem_response[sn,ch].keys()))
+            print('trial_response_by_stimulus keys: ' + repr(trial_response_by_stimulus.keys()))
+            print('trial_response_by_stimulus[sn,ch] keys: ' + repr(trial_response_by_stimulus[sn,ch].keys()))
 
 
 
@@ -201,6 +221,20 @@ if __name__ == '__main__':
     
     
     """
+
+    # plot 1: mean responses to search stimulus (series 1)
+                #2 rows (per condition (light/dark flash))
+                #2 columns (per channel)
+    
+
+
+
+
+
+
+
+    ## misc plotting notes
+
 
     # See the ROI overlaid on top of the image
     # ID.generateRoiMap(roi_name='set1', z=1)
