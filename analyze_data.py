@@ -177,6 +177,7 @@ if __name__ == '__main__':
     print('n_roi_raw = ' + str(n_roi_raw))
 
 
+
     #TODO: Plot region responses and masks, save figs
 
     """ 
@@ -190,7 +191,7 @@ if __name__ == '__main__':
                 2 rows (per condition (light/dark flash))
                 2 columns (per channel)
         responses:    
-            2. and 3. avg roi intensity (over imaging session)
+            3. avg roi intensity (over imaging session), one fig for each series
             4. individual responses (short flashes)
                 two channel responses for 2 series, plus avg roi intensity over entire time, 
                 2 rows (per light condition (light/dark))
@@ -281,8 +282,32 @@ if __name__ == '__main__':
         plt.show()
 
 
+    
+    
 
+    # plot 3: avg roi intensity over series (1, 2, 3) - for each roi
+    
+    for roi_ind in range(n_roi_raw):
+        fh, ax = plt.subplots(len(func_channels_num), len(series_num), figsize=(12, 4))
+        for series_ind, current_series in enumerate(series_num):
+            sn = 'sn' + current_series
+            for ch_ind, current_channel in enumerate(func_channels_num):
+                ch = 'ch' + current_channel
+                ax[ch_ind, series_ind].plot(roi_data[sn,ch]['roi_response'][roi_ind].T)
+                ax[ch_ind, series_ind].set_xlabel('Frame')
+                ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
+                ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
+        plt.suptitle('mean roi intensity, raw roi {}'.format(roi_ind))
+        plt.show()
 
+    
+
+    
+    
+    
+    
+    
+    
     ## misc plotting notes
 
 
