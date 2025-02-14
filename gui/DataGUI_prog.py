@@ -8,6 +8,7 @@ mhturner@stanford.edu
 import os
 import psutil
 import sys
+import argparse
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -25,26 +26,47 @@ import PyQt6.QtGui as QtGui
 import numpy as np
 
 from visanalysis.util import plot_tools, h5io
+from visanalysis.plugin import base as base_plugin
 
 
 class DataGUI(QWidget):
 
     def __init__(self):
         super().__init__()
-
-        self.experiment_file_name = None
-        self.experiment_file_directory = None
-        self.data_directory = None
+        # parse shell arguments
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--experiment_file_directory", nargs="?", help="Folder pointing to hdf5")
+        parser.add_argument("--experiment_file_name", nargs="?", help="experiment_file_name.hdf5")
+        parser.add_argument("--experiment_file_path", nargs="?", help="complete path to .hdf5 file")
+        parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
+        parser.add_argument("--series_number", nargs="?", help="integer starting with 1")
+        parser.add_argument("--image_file_path", nargs="?", help="full path to .nii image file to be used for roi selection")
+        args = parser.parse_args()
+        experiment_file_directory = args.experiment_file_directory
+        experiment_file_name = args.experiment_file_name
+        experiment_file_path = args.experiment_file_path
+        rig = args.rig
+        series_number = args.series_number
+        image_file_path = args.image_file_path
+        print('experiment_file_directory = ' + str(experiment_file_directory))
+        print('experiment_file_name = ' + str(experiment_file_name))
+        print('rig = ' + str(rig))
+        self.experiment_file_name = experiment_file_name #name of hdf5 file, previously without .hdf5 but i'm changing that
+        self.experiment_file_directory = experiment_file_directory #path to folder that contains .hdf5 file
+        self.experiment_file_path = experiment_file_path #complete path to .hdf5 file
+        self.rig = rig 
+        self.image_file_path = image_file_path
+        self.image_file_name = os.path.split(image_file_path)[-1]
+        self.image_file_directory = os.path.split(image_file_path)[0]
         self.max_rois = 200
         self.roi_type = 'freehand'
         self.roi_radius = None
         self.existing_roi_set_paths = {}
-
         self.current_roi_index = 0
         self.current_z_slice = 0
         self.current_channel = 1  # index
         self.image_series_name = ''
-        self.series_number = None
+        self.series_number = series_number
         self.roi_response = []
         self.roi_mask = []
         self.roi_path = []
@@ -55,26 +77,36 @@ class DataGUI(QWidget):
 
         self.colors = [mcolors.to_rgb(x) for x in list(mcolors.XKCD_COLORS)[:self.max_rois]]
 
+        self.initializeDataAnalysis()
+
         self.initUI()
+
+        self.plugin.updateImagingDataObject(experiment_file_directory, experiment_file_name, series_number)
+
+        ## load expt file - done
+        # from self.selectDataFile
+            # define experiment_file_path - done
+            # define self.experiment_file_name - done
+            # define experiment_file_directory - done
+        #self.currentExperimentLabel.setText(self.experiment_file_name) - moved to self.initUI()
+
+        #self.populateGroups() - not needed anymore
+        self.updateExistingRoiSetList()
+
+        ## select data directory - done (added functionality to self.initUI())
+        ## select series number - done, passed argument from process_data.py
+        ## select image data file - done
+
+        self.selectImageDataFile()
+
+        ## draw rois
+        ## save masks
+        ## close gui?
+
+        #TODO: add fano factor calc and plot?
 
     def initUI(self):
         self.grid = QGridLayout(self)
-
-        self.file_control_grid = QGridLayout()
-        self.file_control_grid.setSpacing(3)
-        self.grid.addLayout(self.file_control_grid, 0, 0)
-
-        self.file_tree_grid = QGridLayout()
-        self.file_tree_grid.setSpacing(3)
-        self.grid.addLayout(self.file_tree_grid, 1, 0)
-
-        self.group_control_grid = QGridLayout()
-        self.group_control_grid.setSpacing(3)
-        self.grid.addLayout(self.group_control_grid, 0, 1)
-
-        self.attribute_grid = QGridLayout()
-        self.attribute_grid.setSpacing(3)
-        self.grid.addLayout(self.attribute_grid, 1, 1)
 
         self.roi_control_grid = QGridLayout()
         self.roi_control_grid.setSpacing(3)
@@ -84,90 +116,17 @@ class DataGUI(QWidget):
         self.plot_grid.setSpacing(3)
         self.grid.addLayout(self.plot_grid, 1, 2)
 
-        # # # # File control browser: # # # # # # # # (0,0)
-        loadButton = QPushButton("Load expt. file", self)
-        loadButton.clicked.connect(self.selectDataFile)
         # Label with current expt file
         self.currentExperimentLabel = QLabel('')
-        self.file_control_grid.addWidget(loadButton, 0, 0)
-        self.file_control_grid.addWidget(self.currentExperimentLabel, 1, 0)
-
-        directoryButton = QPushButton("Select data directory", self)
-        directoryButton.clicked.connect(self.selectDataDirectory)
-        self.file_control_grid.addWidget(directoryButton, 0, 1)
-        self.data_directory_display = QLabel('')
-        self.data_directory_display.setFont(QtGui.QFont('SansSerif', 8))
-        self.file_control_grid.addWidget(self.data_directory_display, 1, 1)
-
-        # Attach metadata to file
-        attachDatabutton = QPushButton("Attach metadata to file", self)
-        attachDatabutton.clicked.connect(self.attachData)
-        self.file_control_grid.addWidget(attachDatabutton, 2, 0, 1, 2)
-
-        # Select image data file
-        selectImageDataFileButton = QPushButton("Select image data file", self)
-        selectImageDataFileButton.clicked.connect(self.selectImageDataFile)
-        self.file_control_grid.addWidget(selectImageDataFileButton, 3, 0, 1, 2)
-
-        # # # # File tree: # # # # # # # #  (1,0)
-        self.groupTree = QTreeWidget(self)
-        self.groupTree.setHeaderHidden(True)
-        self.groupTree.itemClicked.connect(self.onTreeItemClicked)
-        self.file_tree_grid.addWidget(self.groupTree, 3, 0, 2, 7)
-
-        # # # # Group control: # # # # # # # # (0, 1)
-        deleteGroupButton = QPushButton("Delete selected group", self)
-        deleteGroupButton.clicked.connect(self.deleteSelectedGroup)
-        self.group_control_grid.addWidget(deleteGroupButton, 0, 0, 1, 2)
-
+        self.currentExperimentLabel.setText(self.experiment_file_name) #TODO: fix experiment label display
+        
+        self.experiment_file_path_display = QLabel('')
+        self.experiment_file_path_display.setText('..' + self.experiment_file_path[-24:])
+        self.experiment_file_path_display.setFont(QtGui.QFont('SansSerif', 8))
+                   
         # File name display
         self.currentImageFileNameLabel = QLabel('')
-        self.group_control_grid.addWidget(self.currentImageFileNameLabel, 1, 0)
-
-        # Channel drop down
-        ch_label = QLabel('Channel:')
-        self.ChannelComboBox = QComboBox(self)
-        self.ChannelComboBox.addItem("1")
-        self.ChannelComboBox.addItem("0")
-        self.ChannelComboBox.activated.connect(self.selectChannel)
-        self.group_control_grid.addWidget(ch_label, 2, 0)
-        self.group_control_grid.addWidget(self.ChannelComboBox, 2, 1)
-
-        # # # # Attribute table: # # # # # # # # (1, 1)
-        self.tableAttributes = QTableWidget()
-        self.tableAttributes.setStyleSheet("")
-        self.tableAttributes.setColumnCount(2)
-        self.tableAttributes.setObjectName("tableAttributes")
-        self.tableAttributes.setRowCount(0)
-        item = QTableWidgetItem()
-        font = QtGui.QFont()
-        font.setPointSize(10)
-        item.setFont(font)
-        item.setBackground(QtGui.QColor(121, 121, 121))
-        brush = QtGui.QBrush(QtGui.QColor(91, 91, 91))
-        brush.setStyle(QtCore.Qt.BrushStyle.SolidPattern)
-        item.setForeground(brush)
-        self.tableAttributes.setHorizontalHeaderItem(0, item)
-        item = QTableWidgetItem()
-        item.setBackground(QtGui.QColor(123, 123, 123))
-        brush = QtGui.QBrush(QtGui.QColor(91, 91, 91))
-        brush.setStyle(QtCore.Qt.BrushStyle.SolidPattern)
-        item.setForeground(brush)
-        self.tableAttributes.setHorizontalHeaderItem(1, item)
-        self.tableAttributes.horizontalHeader().setCascadingSectionResizes(True)
-        self.tableAttributes.horizontalHeader().setHighlightSections(False)
-        self.tableAttributes.horizontalHeader().setSortIndicatorShown(True)
-        self.tableAttributes.horizontalHeader().setStretchLastSection(True)
-        self.tableAttributes.verticalHeader().setVisible(False)
-        self.tableAttributes.verticalHeader().setHighlightSections(False)
-        item = self.tableAttributes.horizontalHeaderItem(0)
-        item.setText("Attribute")
-        item = self.tableAttributes.horizontalHeaderItem(1)
-        item.setText("Value")
-
-        self.tableAttributes.itemChanged.connect(self.update_attrs_to_file)
-        self.attribute_grid.addWidget(self.tableAttributes, 3, 0, 1, 8)
-
+        
         # # # # Roi control # # # # # # # # (0, 2)
         # ROI type drop-down
         self.RoiTypeComboBox = QComboBox(self)
@@ -296,7 +255,7 @@ class DataGUI(QWidget):
             item.addChild(child)
 
     def onTreeItemClicked(self, item, column):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         group_path = h5io.getPathFromTreeItem(self.groupTree.selectedItems()[0])
         self.clearRois()
         self.series_number = None
@@ -305,16 +264,16 @@ class DataGUI(QWidget):
             if self.plugin.dataIsAttached(file_path, self.series_number):
                 self.plugin.updateImagingDataObject(self.experiment_file_directory, self.experiment_file_name, self.series_number)
             # look for image_file_name or ask user to select it
-            if self.data_directory is not None:
+            if self.experiment_file_path is not None:
                 image_file_name = h5io.readImageFileName(file_path, self.series_number)
                 if image_file_name is None or image_file_name == '':
                     image_file_path, _ = QFileDialog.getOpenFileName(self, "Select image file")
                     print('User selected image file at {}'.format(image_file_path))
                     image_file_name = os.path.split(image_file_path)[-1]
-                    self.data_directory = os.path.split(image_file_path)[:-1][0]
+                    self.experiment_file_path = os.path.split(image_file_path)[:-1][0]
                     h5io.attachImageFileName(file_path, self.series_number, image_file_name)
                     print('Attached image_file_name {} to series {}'.format(image_file_name, self.series_number))
-                    print('Data directory is {}'.format(self.data_directory))
+                    print('Data directory is {}'.format(self.experiment_file_path))
 
                 self.image_file_name = image_file_name
                 self.currentImageFileNameLabel.setText(self.image_file_name)
@@ -338,9 +297,9 @@ class DataGUI(QWidget):
 
         # show roi image
         if self.series_number is not None:  # Clicked on node of the tree associated with a single series
-            if self.data_directory is not None:  # user has selected a raw data directory
+            if self.experiment_file_path is not None:  # user has selected a raw data directory
                 if self.plugin.dataIsAttached(file_path, self.series_number):
-                    self.plugin.updateImageSeries(data_directory=self.data_directory,
+                    self.plugin.updateImageSeries(experiment_file_path=self.experiment_file_path,
                                                   image_file_name=self.image_file_name,
                                                   series_number=self.series_number,
                                                   channel=self.current_channel)
@@ -362,7 +321,7 @@ class DataGUI(QWidget):
 
     def updateExistingRoiSetList(self):
         if self.experiment_file_name is not None:
-            file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+            file_path = self.experiment_file_path
             self.existing_roi_set_paths = self.plugin.getRoiSetPaths(file_path)  # dictionary of name: full path
             self.loadROIsComboBox.clear()
             for r_path in self.existing_roi_set_paths:
@@ -371,7 +330,7 @@ class DataGUI(QWidget):
             self.show()
 
     def selectedExistingRoiSet(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         roi_set_key = self.loadROIsComboBox.currentText()
         roi_set_path = self.existing_roi_set_paths[roi_set_key]
 
@@ -390,25 +349,9 @@ class DataGUI(QWidget):
             # Update figures
             self.redrawRoiTraces()
 
-    def selectDataFile(self):
-        filePath, _ = QFileDialog.getOpenFileName(self, "Open experiment (hdf5) file")
-        self.experiment_file_name = os.path.split(filePath)[1].split('.')[0]
-        self.experiment_file_directory = os.path.split(filePath)[0]
-
-        if self.experiment_file_name != '':
-            self.currentExperimentLabel.setText(self.experiment_file_name)
-            self.initializeDataAnalysis()
-            self.populateGroups()
-            self.updateExistingRoiSetList()
-
-    def selectDataDirectory(self):
-        filePath = str(QFileDialog.getExistingDirectory(self, "Select data directory"))
-        self.data_directory = filePath
-        self.data_directory_display.setText('..' + self.data_directory[-24:])
-
     def initializeDataAnalysis(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
-        data_type = h5io.getDataType(file_path)
+        file_path = self.experiment_file_path
+        data_type = self.rig
         # Load plugin based on Rig name in hdf5 file
         if data_type == 'Bruker':
             from visanalysis.plugin import bruker
@@ -428,31 +371,19 @@ class DataGUI(QWidget):
         sys.stdout.flush()
         # # # TEST # # #
 
-    def attachData(self):
-        if self.data_directory is not None:
-            file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
-            self.plugin.attachData(self.experiment_file_name, file_path, self.data_directory)
-            print('Data attached')
-        else:
-            print('Select a data directory before attaching new data')
-
     def selectImageDataFile(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
-
-        image_file_path, _ = QFileDialog.getOpenFileName(self, "Select image file")
-        print('User selected image file at {}'.format(image_file_path))
-        self.image_file_name = os.path.split(image_file_path)[-1]
-        self.data_directory = os.path.split(image_file_path)[:-1][0]
+        file_path = self.experiment_file_path
+        print('User selected image file at {}'.format(self.image_file_path))
         h5io.attachImageFileName(file_path, self.series_number, self.image_file_name)
         print('Attached image_file_name {} to series {}'.format(self.image_file_name, self.series_number))
-        print('Data directory is {}'.format(self.data_directory))
+        print('Data directory is {}'.format(self.experiment_file_path))
 
         self.currentImageFileNameLabel.setText(self.image_file_name)
 
         # show roi image
         if self.series_number is not None:
-            if self.data_directory is not None:  # user has selected a raw data directory
-                self.plugin.updateImageSeries(data_directory=self.data_directory,
+            if self.experiment_file_path is not None:  # user has selected a raw data directory
+                self.plugin.updateImageSeries(data_directory=self.image_file_directory,
                                               image_file_name=self.image_file_name,
                                               series_number=self.series_number,
                                               channel=self.current_channel)
@@ -464,7 +395,7 @@ class DataGUI(QWidget):
                 print('Select a data directory before drawing rois')
 
     def deleteSelectedGroup(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         group_path = h5io.getPathFromTreeItem(self.groupTree.selectedItems()[0])
         group_name = group_path.split('/')[-1]
 
@@ -483,7 +414,7 @@ class DataGUI(QWidget):
             print('Delete aborted')
 
     def populateGroups(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         self.group_dset_dict = h5io.getHierarchy(file_path)
         self._populateTree(self.groupTree, self.group_dset_dict)
 
@@ -511,7 +442,7 @@ class DataGUI(QWidget):
         self.tableAttributes.blockSignals(False)
 
     def update_attrs_to_file(self, item):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         group_path = h5io.getPathFromTreeItem(self.groupTree.selectedItems()[0])
 
         attr_key = self.tableAttributes.item(item.row(), 0).text()
@@ -641,14 +572,14 @@ class DataGUI(QWidget):
 # %% # # # # # # # # LOADING / SAVING / COMPUTING ROIS # # # # # # # # # # # # # # # # # # #
 
     def loadRois(self, roi_set_path):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         self.roi_response, self.roi_image, self.roi_path, self.roi_mask = self.plugin.loadRoiSet(file_path, roi_set_path)
         self.zSlider.setValue(0)
         self.zSlider.setMaximum(self.roi_image.shape[2]-1)
 
 
     def saveRois(self):
-        file_path = os.path.join(self.experiment_file_directory, self.experiment_file_name + '.hdf5')
+        file_path = self.experiment_file_path
         roi_set_name = self.le_roiSetName.text()
         if roi_set_name in h5io.getAvailableRoiSetNames(file_path, self.series_number):
             buttonReply = QMessageBox.question(self,
@@ -657,28 +588,26 @@ class DataGUI(QWidget):
                                                QMessageBox.StandardButton.Yes |
                                                QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
             if buttonReply == QMessageBox.StandardButton.Yes:
-                self.plugin.saveRoiSet(file_path,
+                self.plugin.saveRoiSetMask(file_path,
                                        series_number=self.series_number,
                                        roi_set_name=roi_set_name,
                                        roi_mask=self.roi_mask,
-                                       roi_response=self.roi_response,
+                                       #roi_response=self.roi_response,
                                        roi_image=self.roi_image,
                                        roi_path=self.roi_path)
                 print('Saved roi set {} to series {}'.format(roi_set_name, self.series_number))
-                self.populateGroups()
                 self.updateExistingRoiSetList()
             else:
                 print('Overwrite aborted - pick a unique roi set name')
         else:
-            self.plugin.saveRoiSet(file_path,
+            self.plugin.saveRoiSetMask(file_path,
                                    series_number=self.series_number,
                                    roi_set_name=roi_set_name,
                                    roi_mask=self.roi_mask,
-                                   roi_response=self.roi_response,
+                                   #roi_response=self.roi_response,
                                    roi_image=self.roi_image,
                                    roi_path=self.roi_path)
             print('Saved roi set {} to series {}'.format(roi_set_name, self.series_number))
-            self.populateGroups()
             self.updateExistingRoiSetList()
 
     def deleteRoi(self):
@@ -715,8 +644,8 @@ class DataGUI(QWidget):
 
         # show roi image
         if self.series_number is not None:
-            if self.data_directory is not None:  # user has selected a raw data directory
-                self.plugin.updateImageSeries(data_directory=self.data_directory,
+            if self.experiment_file_path is not None:  # user has selected a raw data directory
+                self.plugin.updateImageSeries(experiment_file_path=self.experiment_file_path,
                                               image_file_name=self.image_file_name,
                                               series_number=self.series_number,
                                               channel=self.current_channel)

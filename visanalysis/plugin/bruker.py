@@ -95,23 +95,24 @@ class BrukerPlugin(base_plugin.BasePlugin):
 
         return mask
 
-    def attachData(self, experiment_file_name, file_path, data_directory):
+    def attachData(self, experiment_file_name, data_directory):
+        file_path = os.path.join(data_directory,experiment_file_name)
         for series_number in self.getSeriesNumbers(file_path):
-            # # # # Retrieve metadata from files in data directory # # #
-            file_basename = 'TSeries-' + experiment_file_name.replace('-', '') + '-' + ('00' + str(series_number))[-3:]
-            metadata_filepath = os.path.join(data_directory, file_basename)
-            if os.path.exists(metadata_filepath + '.xml'):
-                # Photodiode trace
-                v_rec_suffix = '_Cycle00001_VoltageRecording_001'
-                voltage_basepath = os.path.join(data_directory, file_basename + v_rec_suffix)
-                voltage_recording, time_vector, sample_rate = getVoltageRecording(voltage_basepath)
+        # # # # Retrieve metadata from files in data directory # # #
+            # Photodiode trace
+            voltage_filename = 'voltage_recording'
+            voltage_basepath = os.path.join(data_directory,'func{}'.format(repr(series_number-1)),'imaging','visual',voltage_filename)
+            voltage_recording, time_vector, sample_rate = getVoltageRecording(voltage_basepath)
 
-                # TODO: pick frame monitor(s) out of voltage recording traces based on name, or alt by input number
-                frame_monitor = voltage_recording
+            # TODO: pick frame monitor(s) out of voltage recording traces based on name, or alt by input number
+            frame_monitor = voltage_recording
 
-                # Metadata & timing information
-                response_timing = getAcquisitionTiming(metadata_filepath)
-                metadata = getMetaData(metadata_filepath)
+            # Metadata & timing information
+            metadata_filename = 'recording_metadata'
+            metadata_basepath = os.path.join(data_directory,'func{}'.format(repr(series_number-1)),'imaging',metadata_filename)
+            if os.path.exists(metadata_basepath + '.xml'):
+                response_timing = getAcquisitionTiming(metadata_basepath)
+                metadata = getMetaData(metadata_basepath)
 
                 # # # # Attach metadata to epoch run group in data file # # #\
                 with h5py.File(file_path, 'r+') as experiment_file:
@@ -134,7 +135,7 @@ class BrukerPlugin(base_plugin.BasePlugin):
 
                 print('Attached data to series {}'.format(series_number))
             else:
-                print('WARNING! Required metadata files not found at {}'.format(metadata_filepath))
+                print('WARNING! Required metadata files not found at {}'.format(metadata_basepath))
 
     def loadImageSeries(self, data_directory, image_file_name, channel=0):
         metadata_image_dims = self.ImagingDataObject.getAcquisitionMetadata().get('image_dims')  # xyztc
@@ -145,7 +146,7 @@ class BrukerPlugin(base_plugin.BasePlugin):
             self.current_series = np.swapaxes(self.current_series, 0, 2)[:, :, np.newaxis, :]  # -> xyzt
             print('Loaded xyt image series {}'.format(image_file_path))
         elif '.nii' in image_file_name:
-            nib_brain = np.squeeze(np.asanyarray(nib.load(image_file_path).dataobj).astype('uint16'))
+            nib_brain = np.squeeze(np.asanyarray(nib.load(image_file_path).dataobj).astype('float32'))
             brain_dims = nib_brain.shape
             print('brain_dims = {}'.format(brain_dims))
             if len(brain_dims) == 3:  # xyt
