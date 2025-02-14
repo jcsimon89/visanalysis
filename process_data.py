@@ -153,15 +153,13 @@ if __name__ == '__main__':
     # figure out if data is volume or slice
     num_spacial_dim = len(roi_image.shape)
 
-    # save fly metadata for later, add func_spatial_dim
+    # add func_spatial_dim and get fly metadata for later
     fly_metadata = ID.getSubjectMetadata()
-    fly_metadata['func_spatial_dim'] = np.shape(roi_image) #spatial dimensions of functional data
-
     print('fly_metadata: ' + repr(fly_metadata))
    
     # convert roi mask to numbers for each separate roi
     roi_mask = np.zeros(roi_mask_binary.shape[1:])
-    print('dimensions of roi_mask: ' + str(np.shape(roi_mask))) # shape:x,y,(z)
+    print('dimensions of func data: ' + str(np.shape(roi_mask))) # shape:x,y,(z)
 
     if num_spacial_dim == 3: #data is a volume
         for roi_ind in range(roi_mask_binary.shape[0]):
@@ -180,8 +178,8 @@ if __name__ == '__main__':
     else:
         print('data does not appear to be a volume or a slice, num_spatial_dim = ' + str(num_spacial_dim))
 
-    n_rois = np.unique(roi_mask) # numpy integer
-    print('unique values in roi_mask: ' + str(n_rois))
+    n_roi = np.unique(roi_mask) # numpy integer
+    print('number of rois in roi_mask: ' + str(n_roi))
 
     ## extract other important metadata for analysis
     series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path))) # datatype = list of strings but individual series numbers will be converted to int before using methods
