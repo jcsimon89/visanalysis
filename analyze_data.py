@@ -365,8 +365,8 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
-                ax[ch_ind, u_ind].set_title('Ch{}, 25ms Flash, Intensity = {}'.format(current_channel,up))
-        plt.suptitle('Mean responses, 25ms Flash, raw roi {}'.format(roi_ind,))
+                ax[ch_ind, u_ind].set_title('Ch{}, 300ms Flash, Intensity = {}'.format(current_channel,up))
+        plt.suptitle('Mean responses, 300ms Flash, raw roi {}'.format(roi_ind,))
         plt.show()
 
     
