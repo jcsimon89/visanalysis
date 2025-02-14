@@ -51,7 +51,7 @@ if __name__ == '__main__':
     func_channels = fly_json['functional_channel'].replace("[","").replace("]","").replace("'","").split(",") # can be many functional channels - weird format in snake_brainsss json imports as one big string, cleaning up and converting to list of strings #datatype=list of strings
     func_channels_num = [func_channels[i].split('_')[-1] for i in range(len(func_channels))] #datatype = list of strings, but individual channel numbers will be converted to int before using methods
     print('func_channels = ' + str(func_channels))
-    print('func_channel_num = ' + str(func_channels_num))
+    print('func_channels_num = ' + str(func_channels_num))
 
     #TODO: other data needed from fly_json?
 
@@ -85,7 +85,7 @@ if __name__ == '__main__':
                                         int(series_num[0]),
                                         quiet=False)
     
-    # save fly metadata for later
+    # get fly metadata for later
     fly_metadata = ID.getSubjectMetadata()
     print('fly_metadata: ' + repr(fly_metadata))
 
@@ -152,22 +152,29 @@ if __name__ == '__main__':
             #print('roi_data keys: ' + repr(roi_data.keys()))
             #print('roi_data[sn,ch] keys: ' + repr(roi_data[sn,ch].keys()))
             
-            unique_intensity_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ...
-            ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')            
-            # unique_intensity_values: dict (key = sn) of dicts? (key = parameter name)
-            # mean_response: dict (key = sn,ch) of dicts? (key = parameter name)
-            # sem_response: dict (key = sn,ch) of dicts? (key = parameter name)
-            # trial_response_by_stimulus: dict (key = sn,ch) of dicts? (key = parameter name)
+            unique_intensity_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')            
+            # unique_intensity_values: dict (key = sn) of lists of each unique value of parameter_key (?)
+            # mean_response: dict (key = sn,ch) of numpy arrays (nroi x unique values of parameter_key x time)
+            # sem_response: dict (key = sn,ch) of numpy arrays (nroi x unique values of parameter_key x time)
+            # trial_response_by_stimulus: dict (key = sn,ch) of lists for each unique value of parameter_key (?)
 
-            print('unique_intensity_values keys: ' + repr(unique_intensity_values.keys()))
-            print('unique_intensity_values[sn] keys: ' + repr(unique_intensity_values[sn].keys()))
-            print('mean_response keys: ' + repr(mean_response.keys()))
-            print('mean_response[sn,ch] keys: ' + repr(mean_response[sn,ch].keys()))
-            print('sem_response keys: ' + repr(sem_response.keys()))
-            print('sem_response[sn,ch] keys: ' + repr(sem_response[sn,ch].keys()))
-            print('trial_response_by_stimulus keys: ' + repr(trial_response_by_stimulus.keys()))
-            print('trial_response_by_stimulus[sn,ch] keys: ' + repr(trial_response_by_stimulus[sn,ch].keys()))
-
+            # print('unique_intensity_values keys: ' + repr(unique_intensity_values.keys()))
+            # print('unique_intensity_values datatype: ' + repr(type(unique_intensity_values[sn])))
+            # print('unique_intensity_values size: ' + repr(len(unique_intensity_values[sn])))
+            # print('mean_response keys: ' + repr(mean_response.keys()))
+            # print('mean_response datatype: ' + repr(type(mean_response[sn,ch])))
+            #print('mean_response size: ' + repr(mean_response[sn,ch].shape))
+            # print('sem_response keys: ' + repr(sem_response.keys()))
+            # print('sem_response datatype: ' + repr(type(sem_response[sn,ch])))
+            # print('trial_response_by_stimulus keys: ' + repr(trial_response_by_stimulus.keys()))
+            # print('trial_response_by_stimulus datatype: ' + repr(type(trial_response_by_stimulus[sn,ch])))
+            # print('trial_response_by_stimulus size: ' + repr(len(trial_response_by_stimulus[sn,ch])))
+            
+    #extract number of raw rois from hdf5 (assumes all series have same number of rois which is true if process_data.py was used to make rois)
+    sn = 'sn' + series_num[0] #use  first series
+    ch = 'ch' + func_channels_num[0] # use first functional channel (arbitrary but shouldnt matter)
+    n_roi_raw = len(roi_data[sn,ch]['roi_response'])
+    print('n_roi_raw = ' + str(n_roi_raw))
 
 
     #TODO: Plot region responses and masks, save figs
@@ -176,7 +183,10 @@ if __name__ == '__main__':
     plots to make:
 
         selecting rois:
-            1. mean responses to search stimulus
+            1. mean responses to search stimulus - all rois on one plot
+                2 rows (per condition (light/dark flash))
+                2 columns (per channel)
+            2. mean responses to search stimulus - individual rois
                 2 rows (per condition (light/dark flash))
                 2 columns (per channel)
         responses:    
@@ -222,13 +232,53 @@ if __name__ == '__main__':
     
     """
 
-    # plot 1: mean responses to search stimulus (series 1)
+    #TODO:print figures, show stimulus times (shaded)
+
+    # plot 1: mean responses to search stimulus (series 1) - all rois plotted together
                 #2 rows (per condition (light/dark flash))
                 #2 columns (per channel)
-    
+
+    sn = 'sn' + series_num[0] #assume first series is search stim
+    #[plot_tools.cleanAxes(x) for x in ax.ravel()]
+
+    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(10, 2))
+    [x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
+    for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
+        ch = 'ch' + current_channel
+        for u_ind, up in enumerate(unique_intensity_values[sn]):
+            print('u_ind = ' + str(u_ind))
+            print('ch_ind = ' + str(ch_ind))
+            ax[ch_ind,u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
+            ax[ch_ind,u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
+            ax[ch_ind,u_ind].set_ylabel('Mean Response (dF/F)')
+            ax[ch_ind,u_ind].set_xlabel('Time (s)')
+            #plot stimulus time???
+    plt.suptitle("search stimulus, mean response, all rois")
+    plt.show()
 
 
+    # plot 2: mean responses to search stimulus (series 1)
+                #2 rows (per condition (light/dark flash))
+                #2 columns (per channel)
 
+    sn = 'sn' + series_num[0] #assume first series is search stim
+    #[plot_tools.cleanAxes(x) for x in ax.ravel()]
+
+    for roi_ind in range(n_roi_raw):
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(10, 2))
+        [x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
+        for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
+            ch = 'ch' + current_channel
+            for u_ind, up in enumerate(unique_intensity_values[sn]):
+                print('u_ind = ' + str(u_ind))
+                print('ch_ind = ' + str(ch_ind))
+                ax[ch_ind,u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
+                ax[ch_ind,u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
+                ax[ch_ind,u_ind].set_ylabel('Mean Response (dF/F)')
+                ax[ch_ind,u_ind].set_xlabel('Time (s)')
+                #plot stimulus time???
+        plt.suptitle("search stimulus, mean response, raw roi {} ".format(roi_ind))
+        plt.show()
 
 
 
@@ -299,20 +349,20 @@ if __name__ == '__main__':
 
     ##TODO: resave hdf5 with selected rois only
 
-    h5r=h5py.File(experiment_file_path, 'r')
-    final_hdf5_save_path = os.path.join(experiment_file_directory + 'fly_final.hdf5')
+    # h5r=h5py.File(experiment_file_path, 'r')
+    # final_hdf5_save_path = os.path.join(experiment_file_directory + 'fly_final.hdf5')
     
-    with h5py.File(final_hdf5_save_path, 'w') as h5w:
-        for obj in h5r.keys():        
-            h5r.copy(obj, h5w)
-        for current_series in series_num: #loop through all series
-            sn = 'sn' + current_series
-            for current_channel in func_channels_num: #loop through channels
-                ch = 'ch' + current_channel
-                h5w.create_dataset('/Subjects/1/epoch_runs/series_00' + current_series + 
-                '/aligned/mask_ch' + current_channel + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
+    # with h5py.File(final_hdf5_save_path, 'w') as h5w:
+    #     for obj in h5r.keys():        
+    #         h5r.copy(obj, h5w)
+    #     for current_series in series_num: #loop through all series
+    #         sn = 'sn' + current_series
+    #         for current_channel in func_channels_num: #loop through channels
+    #             ch = 'ch' + current_channel
+    #             h5w.create_dataset('/Subjects/1/epoch_runs/series_00' + current_series + 
+    #             '/aligned/mask_ch' + current_channel + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
     
-    h5r.close()
+    # h5r.close()
 
 #path to data in h5 file: /Subjects/1/epoch_runs/series_003/aligned/mask_ch1/roi_response
     
