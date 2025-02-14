@@ -123,7 +123,7 @@ if __name__ == '__main__':
         # run_parameters: dict (key = sn) of dicts (key = parameter name)
         run_parameters[sn] = ID.getRunParameters()
         #print('run_parameters keys: ' + repr(run_parameters.keys()))
-        #print('run_parameters[sn] keys: ' + repr(run_parameters[sn].keys()))
+        print('run_parameters[sn] keys: ' + repr(run_parameters[sn].keys()))
 
         # epoch_parameters:  dict (key = sn) of dicts (key = parameter name) of all epoch parameters, one for each epoch (trial)
         epoch_parameters[sn] = ID.getEpochParameters()[0] #method returns list with one element which is dict (key=parameter names)
@@ -176,9 +176,6 @@ if __name__ == '__main__':
     n_roi_raw = len(roi_data[sn,ch]['roi_response'])
     print('n_roi_raw = ' + str(n_roi_raw))
 
-
-
-    #TODO: Plot region responses and masks, save figs
 
     """ 
     plots to make:
@@ -233,22 +230,40 @@ if __name__ == '__main__':
     
     """
 
+    
+
+    #figure out which series is which
+
+    search_series = 'sn' + series_num[0] #assume first series is search stim
+    print('search stim series: ' + search_series)
+
+    for current_series in series_num:
+        sn = 'sn' + current_series
+        if run_parameters[sn]['stim_time']==0.3 and sn!='sn1':
+            long_flash_series = sn
+            print('300ms flash series: ' + long_flash_series)
+    
+    for series_ind, current_series in enumerate(series_num):
+        sn = 'sn' + current_series
+        if run_parameters[sn]['stim_time']==0.025:
+            short_flash_series = sn
+            print('25ms flash series: ' + short_flash_series)
+
+
     #TODO:print figures, show stimulus times (shaded)
 
     # plot 1: mean responses to search stimulus (series 1) - all rois plotted together
                 #2 rows (per condition (light/dark flash))
                 #2 columns (per channel)
 
-    sn = 'sn' + series_num[0] #assume first series is search stim
     #[plot_tools.cleanAxes(x) for x in ax.ravel()]
 
+    sn = search_series
     fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(10, 2))
     [x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
     for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
         ch = 'ch' + current_channel
         for u_ind, up in enumerate(unique_intensity_values[sn]):
-            print('u_ind = ' + str(u_ind))
-            print('ch_ind = ' + str(ch_ind))
             ax[ch_ind,u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
             ax[ch_ind,u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
             ax[ch_ind,u_ind].set_ylabel('Mean Response (dF/F)')
@@ -258,11 +273,11 @@ if __name__ == '__main__':
     plt.show()
 
 
-    # plot 2: mean responses to search stimulus (series 1)
+    # plot 2: mean responses to search stimulus (series 1) - per roi
                 #2 rows (per condition (light/dark flash))
                 #2 columns (per channel)
 
-    sn = 'sn' + series_num[0] #assume first series is search stim
+    sn = search_series #assume first series is search stim
     #[plot_tools.cleanAxes(x) for x in ax.ravel()]
 
     for roi_ind in range(n_roi_raw):
@@ -271,8 +286,6 @@ if __name__ == '__main__':
         for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
-                print('u_ind = ' + str(u_ind))
-                print('ch_ind = ' + str(ch_ind))
                 ax[ch_ind,u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
                 ax[ch_ind,u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
                 ax[ch_ind,u_ind].set_ylabel('Mean Response (dF/F)')
@@ -298,6 +311,62 @@ if __name__ == '__main__':
                 ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
                 ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
         plt.suptitle('mean roi intensity, raw roi {}'.format(roi_ind))
+        plt.show()
+
+    # plot 4: individual responses (25ms flashes)
+    sn = short_flash_series 
+    for roi_ind in range(n_roi_raw):
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
+        for ch_ind, current_channel in enumerate(func_channels_num):
+            ch = 'ch' + current_channel
+            for u_ind, up in enumerate(unique_intensity_values[sn]):
+                ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], roi_data[sn,ch]['epoch_response'][roi_ind, :, :].T)
+                ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+                ax[ch_ind, u_ind].set_xlabel('Time (s)')
+                ax[ch_ind, u_ind].set_title('Ch{}, 25ms Flash, Intensity = {}'.format(current_channel,up))
+        plt.suptitle('Individual responses, 25ms Flash, raw roi {}'.format(roi_ind,))
+        plt.show()
+    
+    # plot 5: individual responses (300ms flashes)
+    sn = long_flash_series 
+    for roi_ind in range(n_roi_raw):
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
+        for ch_ind, current_channel in enumerate(func_channels_num):
+            ch = 'ch' + current_channel
+            for u_ind, up in enumerate(unique_intensity_values[sn]):
+                ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], roi_data[sn,ch]['epoch_response'][roi_ind, :, :].T)
+                ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+                ax[ch_ind, u_ind].set_xlabel('Time (s)')
+                ax[ch_ind, u_ind].set_title('Ch{}, 300ms Flash, Intensity = {}'.format(current_channel,up))
+        plt.suptitle('Individual responses, 300ms Flash, raw roi {}'.format(roi_ind,))
+        plt.show()
+
+    # plot 6: mean responses (25ms flashes)
+    sn = short_flash_series 
+    for roi_ind in range(n_roi_raw):
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
+        for ch_ind, current_channel in enumerate(func_channels_num):
+            ch = 'ch' + current_channel
+            for u_ind, up in enumerate(unique_intensity_values[sn]):
+                ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
+                ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+                ax[ch_ind, u_ind].set_xlabel('Time (s)')
+                ax[ch_ind, u_ind].set_title('Ch{}, 25ms Flash, Intensity = {}'.format(current_channel,up))
+        plt.suptitle('Mean responses, 25ms Flash, raw roi {}'.format(roi_ind,))
+        plt.show()
+    
+    # plot 7: mean responses (300ms flashes)
+    sn = long_flash_series 
+    for roi_ind in range(n_roi_raw):
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
+        for ch_ind, current_channel in enumerate(func_channels_num):
+            ch = 'ch' + current_channel
+            for u_ind, up in enumerate(unique_intensity_values[sn]):
+                ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
+                ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+                ax[ch_ind, u_ind].set_xlabel('Time (s)')
+                ax[ch_ind, u_ind].set_title('Ch{}, 25ms Flash, Intensity = {}'.format(current_channel,up))
+        plt.suptitle('Mean responses, 25ms Flash, raw roi {}'.format(roi_ind,))
         plt.show()
 
     
