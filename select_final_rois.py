@@ -156,27 +156,26 @@ if __name__ == '__main__':
             roi_data_final[sn,ch]['roi_response'] = [roi_data[sn,ch]['roi_response'][i] for i in roi_ind_final]
 
     if save:
-        h5r=h5py.File(experiment_file_path, 'r')
-        
-        with h5py.File(final_hdf5_save_path, 'w') as h5w:
-            for obj in h5r.keys():        
-                h5r.copy(obj, h5w)
-            for current_series in series_num: #loop through all series
-                sn = 'sn' + current_series
-                for current_channel in func_channels_num: #loop through channels
-                    ch = 'ch' + current_channel
-                    del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                    '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_image']
-                    del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                    '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask']
-                    del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                    '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response']
-                    #TODO: figure out how to save roi_mask, roi_image for final rois
-                    #h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                    #'/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_image',data=roi_data_final[sn,ch]['roi_image'])
-                    #h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                    #'/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask',data=roi_data_final[sn,ch]['roi_mask'])
-                    h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                    '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
+        with h5py.File(experiment_file_path, 'r') as h5r:
+            with h5py.File(final_hdf5_save_path, 'w') as h5w:
+                for obj in h5r.keys():        
+                    h5r.copy(obj, h5w)
+                for current_series in series_num: #loop through all series
+                    sn = 'sn' + current_series
+                    for current_channel in func_channels_num: #loop through channels
+                        ch = 'ch' + current_channel
+                        del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_image']
+                        del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask']
+                        del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response']
+                        #TODO: figure out how to save roi_mask, roi_image for final rois
+                        #h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                        #'/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_image',data=roi_data_final[sn,ch]['roi_image'])
+                        #h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                        #'/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask',data=roi_data_final[sn,ch]['roi_mask'])
+                        h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
         
         h5r.close()
