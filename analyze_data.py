@@ -461,6 +461,8 @@ if __name__ == '__main__':
 
         if show_figs:
             plt.show()
+
+        plt.close()
     
 
     # ##TODO: select rois to keep?
