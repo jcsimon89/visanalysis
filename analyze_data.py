@@ -19,7 +19,9 @@ from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
 import h5py
 
-# call structure: python analyze_data.py --experiment_file_directory "path" --rig "rigID"
+plt.ioff() #don't show plots unless called for with plt.show() 
+
+# call structure: python analyze_data.py --experiment_file_directory "path" --rig "rigID" --show_figs "True/False" --save_figs "True/False"
 
 # experiment_file_directory: string that contains the path to the folder that has the .hdf5 file
 
@@ -28,10 +30,31 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment_file_directory", nargs="?", help="Folder pointing to hdf5")
     parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
+    parser.add_argument("--show_figs", nargs="?", help="True/False")
+    parser.add_argument("--save_figs", nargs="?", help="True/False")
     args = parser.parse_args()
 
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
+
+    if args.show_figs == 'True':
+        show_figs = True
+    elif args.show_figs == 'False':
+        show_figs = False
+    else:
+        show_figs = False
+        print('not able to interperet show_figs flag, must be "True" or "False", default = False')
+    print('show_figs: ' + str(show_figs))
+
+    if args.save_figs == 'True':
+        save_figs = True
+    elif args.save_figs == 'False':
+        save_figs = False
+    else:
+        save_figs = False
+        print('not able to interperet save_figs flag, must be "True" or "False", default = False')
+    print('save_figs: ' + str(save_figs))
+
 
     # hardcoded file names
     experiment_file_name = 'fly.hdf5'
@@ -123,7 +146,7 @@ if __name__ == '__main__':
         # run_parameters: dict (key = sn) of dicts (key = parameter name)
         run_parameters[sn] = ID.getRunParameters()
         #print('run_parameters keys: ' + repr(run_parameters.keys()))
-        print('run_parameters[sn] keys: ' + repr(run_parameters[sn].keys()))
+        #print('run_parameters[sn] keys: ' + repr(run_parameters[sn].keys()))
 
         # epoch_parameters:  dict (key = sn) of dicts (key = parameter name) of all epoch parameters, one for each epoch (trial)
         epoch_parameters[sn] = ID.getEpochParameters()[0] #method returns list with one element which is dict (key=parameter names)
@@ -163,7 +186,7 @@ if __name__ == '__main__':
             # print('unique_intensity_values size: ' + repr(len(unique_intensity_values[sn])))
             # print('mean_response keys: ' + repr(mean_response.keys()))
             # print('mean_response datatype: ' + repr(type(mean_response[sn,ch])))
-            #print('mean_response size: ' + repr(mean_response[sn,ch].shape))
+            # print('mean_response size: ' + repr(mean_response[sn,ch].shape))
             # print('sem_response keys: ' + repr(sem_response.keys()))
             # print('sem_response datatype: ' + repr(type(sem_response[sn,ch])))
             # print('trial_response_by_stimulus keys: ' + repr(trial_response_by_stimulus.keys()))
@@ -230,9 +253,9 @@ if __name__ == '__main__':
     
     """
 
-    
+        #TODO:print figures, show stimulus times (shaded)
 
-    #figure out which series is which
+    # figure out which series is which
 
     search_series = 'sn' + series_num[0] #assume first series is search stim
     print('search stim series: ' + search_series)
@@ -249,18 +272,23 @@ if __name__ == '__main__':
             short_flash_series = sn
             print('25ms flash series: ' + short_flash_series)
 
+    # make raw fig save directory (if it doesn't exist)
+    raw_figs_folder_name = 'raw_roi_figs'
+    raw_figs_dir = os.path.join(experiment_file_directory,raw_figs_folder_name)
+    os.makedirs(raw_figs_dir, exist_ok=True)
 
-    #TODO:print figures, show stimulus times (shaded)
+
 
     # plot 1: mean responses to search stimulus (series 1) - all rois plotted together
                 #2 rows (per condition (light/dark flash))
                 #2 columns (per channel)
 
     #[plot_tools.cleanAxes(x) for x in ax.ravel()]
-
     sn = search_series
+    fig_name = 'search_mean_response_all_rois'
+    fig_format = '.pdf'
     fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(10, 2))
-    [x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
+    #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
     for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
         ch = 'ch' + current_channel
         for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -270,19 +298,25 @@ if __name__ == '__main__':
             ax[ch_ind,u_ind].set_xlabel('Time (s)')
             #plot stimulus time???
     plt.suptitle("search stimulus, mean response, all rois")
-    plt.show()
 
+    if save_figs:
+        plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+    if show_figs:
+        plt.show()
+
+    plt.close()
 
     # plot 2: mean responses to search stimulus (series 1) - per roi
                 #2 rows (per condition (light/dark flash))
                 #2 columns (per channel)
-
     sn = search_series #assume first series is search stim
+    fig_name_string = 'search_mean_response'
+    fig_format = '.pdf'
     #[plot_tools.cleanAxes(x) for x in ax.ravel()]
-
     for roi_ind in range(n_roi_raw):
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(10, 2))
-        [x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
+        #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
         for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -292,14 +326,21 @@ if __name__ == '__main__':
                 ax[ch_ind,u_ind].set_xlabel('Time (s)')
                 #plot stimulus time???
         plt.suptitle("search stimulus, mean response, raw roi {} ".format(roi_ind))
-        plt.show()
+        
+        if save_figs:
+            fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
+        if show_figs:
+            plt.show()
 
+        plt.close()
     
     
 
     # plot 3: avg roi intensity over series (1, 2, 3) - for each roi
-    
+    fig_name_string = 'mean_intensity'
+    fig_format = '.pdf'
     for roi_ind in range(n_roi_raw):
         fh, ax = plt.subplots(len(func_channels_num), len(series_num), figsize=(12, 4))
         for series_ind, current_series in enumerate(series_num):
@@ -311,10 +352,22 @@ if __name__ == '__main__':
                 ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
                 ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
         plt.suptitle('mean roi intensity, raw roi {}'.format(roi_ind))
-        plt.show()
+
+        if save_figs:
+            fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+        if show_figs:
+            plt.show()
+
+        plt.close()
+        
 
     # plot 4: individual responses (25ms flashes)
     sn = short_flash_series 
+    fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
+    fig_name_string = 'individual_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
+    fig_format = '.pdf'
     for roi_ind in range(n_roi_raw):
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
         for ch_ind, current_channel in enumerate(func_channels_num):
@@ -323,12 +376,24 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], roi_data[sn,ch]['epoch_response'][roi_ind, :, :].T)
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
-                ax[ch_ind, u_ind].set_title('Ch{}, 25ms Flash, Intensity = {}'.format(current_channel,up))
-        plt.suptitle('Individual responses, 25ms Flash, raw roi {}'.format(roi_ind,))
-        plt.show()
+                ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+        plt.suptitle('Individual responses, {} Flash, raw roi {}'.format(fig_stim_time,roi_ind))
+
+        if save_figs:
+            fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+        if show_figs:
+            plt.show()
+
+        plt.close()
+        
     
     # plot 5: individual responses (300ms flashes)
     sn = long_flash_series 
+    fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
+    fig_name_string = 'individual_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
+    fig_format = '.pdf'
     for roi_ind in range(n_roi_raw):
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
         for ch_ind, current_channel in enumerate(func_channels_num):
@@ -337,12 +402,23 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], roi_data[sn,ch]['epoch_response'][roi_ind, :, :].T)
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
-                ax[ch_ind, u_ind].set_title('Ch{}, 300ms Flash, Intensity = {}'.format(current_channel,up))
-        plt.suptitle('Individual responses, 300ms Flash, raw roi {}'.format(roi_ind,))
-        plt.show()
+                ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+        plt.suptitle('Individual responses, {} Flash, raw roi {}'.format(fig_stim_time,roi_ind))
+
+        if save_figs:
+            fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+        if show_figs:
+            plt.show()
+
+        plt.close()
 
     # plot 6: mean responses (25ms flashes)
-    sn = short_flash_series 
+    sn = short_flash_series
+    fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
+    fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
+    fig_format = '.pdf' 
     for roi_ind in range(n_roi_raw):
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
         for ch_ind, current_channel in enumerate(func_channels_num):
@@ -351,12 +427,23 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
-                ax[ch_ind, u_ind].set_title('Ch{}, 25ms Flash, Intensity = {}'.format(current_channel,up))
-        plt.suptitle('Mean responses, 25ms Flash, raw roi {}'.format(roi_ind,))
-        plt.show()
+                ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+        plt.suptitle('Mean responses, {} Flash, raw roi {}'.format(fig_stim_time,roi_ind))
+
+        if save_figs:
+            fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+        if show_figs:
+            plt.show()
+
+        plt.close()
     
     # plot 7: mean responses (300ms flashes)
     sn = long_flash_series 
+    fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
+    fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
+    fig_format = '.pdf' 
     for roi_ind in range(n_roi_raw):
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
         for ch_ind, current_channel in enumerate(func_channels_num):
@@ -365,98 +452,34 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
-                ax[ch_ind, u_ind].set_title('Ch{}, 300ms Flash, Intensity = {}'.format(current_channel,up))
-        plt.suptitle('Mean responses, 300ms Flash, raw roi {}'.format(roi_ind,))
-        plt.show()
+                ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+        plt.suptitle('Mean responses, {} Flash, raw roi {}'.format(fig_stim_time,roi_ind))
 
+        if save_figs:
+            fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+        if show_figs:
+            plt.show()
     
 
-    
-    
-    
-    
-    
-    
-    ## misc plotting notes
+    # ##TODO: select rois to keep?
+    # roi_ind_final = [] # enter good rois manually for now
+    # roi_data_final = {}
+
+    # for current_series in series_num:
+    #     sn = 'sn' + current_series
+    #     for current_channel in func_channels_num:
+    #         ch = 'ch' + current_channel
+    #         roi_data_final[sn,ch]['roi_image'] = roi_data[sn,ch]['roi_image'][roi_ind_final]
+    #         roi_data_final[sn,ch]['roi_mask'] = roi_data[sn,ch]['roi_mask'][roi_ind_final]
+    #         roi_data_final[sn,ch]['roi_response'] = roi_data[sn,ch]['roi_response'][roi_ind_final]
 
 
-    # See the ROI overlaid on top of the image
-    # ID.generateRoiMap(roi_name='set1', z=1)
+    ##TODO: write keep_roi_ind to file
 
-    ## Plot whole ROI response across entire series - for first roi
-    fh0, ax0 = plt.subplots(1, 1, figsize=(12, 4))
-    ax0.plot(roi_data[sn,ch]['roi_response'][0].T)
-    ax0.set_xlabel('Frame')
-    ax0.set_ylabel('Avg ROI intensity')
-    plt.show()
+# subfunctions (move to top or another file)
 
-    ## Plot ROI response for all trials
-    # 'epoch_response' is shape (rois, trials, time)
-    fh1, ax1 = plt.subplots(1, 1, figsize=(6, 4))
-    ax1.plot(roi_data[sn,ch]['time_vector'], roi_data[sn,ch]['epoch_response'][0, :, :].T)
-    ax1.set_ylabel('Response (dF/F)')
-    ax1.set_xlabel('Time (s)')
-    plt.show()
+# def plot():
 
-    ## Plot trial-average responses by specified parameter name
-
-    unique_parameter_values, mean_response, sem_response, trial_response_by_stimulus = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')
-    roi_data[sn,ch].keys()
-
-    fh, ax = plt.subplots(1, len(unique_parameter_values), figsize=(10, 2))
-    [x.set_ylim([-0.2, 0.2]) for x in ax.ravel()]
-    #[plot_tools.cleanAxes(x) for x in ax.ravel()]
-    for u_ind, up in enumerate(unique_parameter_values):
-        ax[u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[:, u_ind, :].T)
-        ax[u_ind].set_title('Flash = {}'.format(up))
-        ax[u_ind].set_ylabel('Mean Response (dF/F)')
-        ax[u_ind].set_xlabel('Time (s)')
-    plt.show()
-    #plot_tools.addErrorBars(ax[0], roi_data.get('time_vector'), roi_data.get('epoch_response')[0, :, :].T, stat='sem')
-    # max suggests looking a function fillbetween for sem error bars
-    #plot_tools.addScaleBars(ax[0], dT=2.0, dF=0.10, T_value=-0.5, F_value=-0.14)
-
-    ## Loop through ROIs and choose which to keep
-
-    # keep_roi_ind = []
-
-    for roi_ind in range(np.shape(mean_response)[0]):
-        fh, ax = plt.subplots(2, len(unique_parameter_values), figsize=(10, 4))
-        for param_ind, up in enumerate(unique_parameter_values):
-            for ch_ind in [0,1]:
-                ch = 'ch' + str(ch_ind + 1)
-                ax[param_ind, ch_ind].plot(roi_data['time_vector'], mean_response[roi_ind, param_ind, :,ch_ind])
-                ax[param_ind, ch_ind].set_title('Flash = {}, Roi = {}'.format(up,roi_ind))
-                ax[param_ind, ch_ind].set_ylabel('Mean Response (dF/F)')
-                ax[param_ind, ch_ind].set_xlabel('Time (s)')
-        # fh.show()
-        # response = input('Keep ROI?  y or n')
-        # if response == 'y':
-        #     keep_roi_ind.append(roi_ind)
-    
-
-    ##TODO: select rois to keep
-    keep_roi_ind = [] # enter good rois manually for now
-    roi_data_final = roi_data[keep_roi_ind]
-
-    ##TODO: more plotting, figure saving
-
-    ##TODO: resave hdf5 with selected rois only
-
-    # h5r=h5py.File(experiment_file_path, 'r')
-    # final_hdf5_save_path = os.path.join(experiment_file_directory + 'fly_final.hdf5')
-    
-    # with h5py.File(final_hdf5_save_path, 'w') as h5w:
-    #     for obj in h5r.keys():        
-    #         h5r.copy(obj, h5w)
-    #     for current_series in series_num: #loop through all series
-    #         sn = 'sn' + current_series
-    #         for current_channel in func_channels_num: #loop through channels
-    #             ch = 'ch' + current_channel
-    #             h5w.create_dataset('/Subjects/1/epoch_runs/series_00' + current_series + 
-    #             '/aligned/mask_ch' + current_channel + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
-    
-    # h5r.close()
-
-#path to data in h5 file: /Subjects/1/epoch_runs/series_003/aligned/mask_ch1/roi_response
-    
+#     return fh, ax
