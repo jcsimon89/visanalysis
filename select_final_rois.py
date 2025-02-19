@@ -139,6 +139,9 @@ if __name__ == '__main__':
             roi_data[sn,ch] = ID.getRoiResponses(roi_set_name=response_set_name, roi_prefix=roi_prefix) 
             #print('roi_data keys: ' + repr(roi_data.keys()))
             #print('roi_data[sn,ch] keys: ' + repr(roi_data[sn,ch].keys()))
+            print('len(roi_data[sn,ch][roi_response]): ' + repr(len(roi_data[sn,ch]['roi_response'])))
+            print('roi_data[sn,ch][roi_image].shape: ' + repr(roi_data[sn,ch]['roi_image'].shape))
+            print('roi_data[sn,ch][roi_mask].shape: ' + repr(roi_data[sn,ch]['roi_mask'].shape))
 
     ##select rois to keep
     roi_data_final = {}
