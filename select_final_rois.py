@@ -171,10 +171,11 @@ if __name__ == '__main__':
                     '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask']
                     del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
                     '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response']
-                    h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                    '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_image',data=roi_data_final[sn,ch]['roi_image'])
-                    h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                    '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask',data=roi_data_final[sn,ch]['roi_mask'])
+                    #TODO: figure out how to save roi_mask, roi_image for final rois
+                    #h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                    #'/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_image',data=roi_data_final[sn,ch]['roi_image'])
+                    #h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                    #'/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask',data=roi_data_final[sn,ch]['roi_mask'])
                     h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
                     '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
         
