@@ -153,23 +153,23 @@ if __name__ == '__main__':
             roi_data_final[sn,ch] = {}
 
             #figure out mask
-            mask = roi_data_final[sn,ch]['roi_mask'] #nd array with same dims as brain containing diff integer for each roi
-            for i in mask.shape[0]:
-                for j in mask.shape[1]:
+            mask = roi_data[sn,ch]['roi_mask'] #nd array with same dims as brain containing diff integer for each roi
+            for i in range(mask.shape[0]):
+                for j in range(mask.shape[1]):
                     try:
-                        for k in mask.shape[2]:
-                            if mask(i,j,k) != 0:
-                                if mask(i,j,k) not in roi_ind_final:
-                                    mask(i,j,k) = 0
-                                else: mask(i,j,k) = roi_ind_final.index(mask(i,j,k)) + 1 #find ind in roi_ind_final and set to that value +1 (since mask counting starts at 1 not 0)
+                        for k in range(mask.shape[2]):
+                            if mask[i,j,k] != 0:
+                                if mask[i,j,k] not in roi_ind_final:
+                                    mask[i,j,k] = 0
+                                else: mask[i,j,k] = roi_ind_final.index(mask[i,j,k]) + 1 #find ind in roi_ind_final and set to that value +1 (since mask counting starts at 1 not 0)
                                 #TODO: start mask value back at 1 for final rois or keep same roi numbers?
                                 # currently renumbering final rois
                     except:
                         print('data is not three dimensional, trying with two dimensions')
-                        if mask(i,j) != 0:
-                                if mask(i,j) not in roi_ind_final:
-                                    mask(i,j) = 0
-                                else: mask(i,j) = roi_ind_final.index(mask(i,j)) + 1 #find ind in roi_ind_final and set to that value +1 (since mask counting starts at 1 not 0)
+                        if mask[i,j] != 0:
+                                if mask[i,j] not in roi_ind_final:
+                                    mask[i,j] = 0
+                                else: mask[i,j] = roi_ind_final.index(mask[i,j]) + 1 #find ind in roi_ind_final and set to that value +1 (since mask counting starts at 1 not 0)
                                 #TODO: start mask value back at 1 for final rois or keep same roi numbers?
                                 # currently renumbering final rois
             roi_data_final[sn,ch]['roi_mask'] = mask
@@ -191,11 +191,10 @@ if __name__ == '__main__':
                         '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask']
                         del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
                         '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response']
-                        #TODO: figure out how to save roi_mask, roi_image for final rois
-                        #h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                        #'/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_image',data=roi_data_final[sn,ch]['roi_image'])
-                        #h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                        #'/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask',data=roi_data_final[sn,ch]['roi_mask'])
+                        h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_image',data=roi_data_final[sn,ch]['roi_image'])
+                        h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask',data=roi_data_final[sn,ch]['roi_mask'])
                         h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
                         '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
         
