@@ -9,6 +9,9 @@ https://github.com/ClandininLab/visanalysis
 mhturner@stanford.edu
 """
 #TODO: pass roi_mask, roi_image to fly_final.hdf5 in analyze_data (raw)
+# plot roi_image in process_data before and after saveroiresponsefrommask (is it just a meanbrain image the whole time?? i think so)
+# decide how to save mask (single array with different number for each mask or list of individual masks?)
+
 # - test analyze_data final
 # - save single frame figs
 # - show stimulus times (shaded)
