@@ -36,13 +36,14 @@ import h5py
 
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
-experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS139_x_JS251/fly_004' #string to folder containing fly.hdf5 file
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS139_x_JS251/fly_004' #string to folder containing fly.hdf5 file
+experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS139_x_JS252/fly_001'
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
 # process_data
 series_number_for_roi_selection = '3' #string 
-run_gui = 'False' #string "True" or "False", default = "False"
-attach_metadata = 'False' #string "True" or "False", default = "False"
+run_gui = 'True' #string "True" or "False", default = "False"
+attach_metadata = 'True' #string "True" or "False", default = "False"
 
 # analyze_data
 show_figs = 'False' #string "True" or "False", default = "False"
