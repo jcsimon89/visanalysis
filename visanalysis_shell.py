@@ -1,12 +1,18 @@
 """
 visanalysis shell script for running:
 1. process_data.py
-2. analyze_data.py
+2. analyze_data.py (raw)
 3. select_final_rois.py
+4. analyze_data.py (final)
 
 https://github.com/ClandininLab/visanalysis
 mhturner@stanford.edu
 """
+#TODO:
+# 1. test analyze_data final
+# 2. save single frame figs? add plots: X all roi plot for flash series, all_roi/individual roi single page summary pdf, 
+# 3. future: save pngs and powerpoint slides? add roi image plots, standardize plotting tools in analyze_data, add fano factor to gui
+# COMBINED ANALYSIS!!!
 
 #%% INITIALIZE ENVIRONMENT
 
