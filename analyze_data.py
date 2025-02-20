@@ -287,7 +287,7 @@ if __name__ == '__main__':
     sn = search_series
     fig_name = 'search_mean_response_all_rois'
     fig_format = '.pdf'
-    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(10, 2))
+    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
     #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
     for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
         ch = 'ch' + current_channel
@@ -315,7 +315,7 @@ if __name__ == '__main__':
     fig_format = '.pdf'
     #[plot_tools.cleanAxes(x) for x in ax.ravel()]
     for roi_ind in range(n_roi_raw):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(10, 2))
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
         #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
         for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
             ch = 'ch' + current_channel
@@ -342,7 +342,7 @@ if __name__ == '__main__':
     fig_name_string = 'mean_intensity'
     fig_format = '.pdf'
     for roi_ind in range(n_roi_raw):
-        fh, ax = plt.subplots(len(func_channels_num), len(series_num), figsize=(12, 4))
+        fh, ax = plt.subplots(len(func_channels_num), len(series_num), figsize=(16, 9))
         for series_ind, current_series in enumerate(series_num):
             sn = 'sn' + current_series
             for ch_ind, current_channel in enumerate(func_channels_num):
@@ -369,7 +369,7 @@ if __name__ == '__main__':
     fig_name_string = 'individual_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf'
     for roi_ind in range(n_roi_raw):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -395,7 +395,7 @@ if __name__ == '__main__':
     fig_name_string = 'individual_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf'
     for roi_ind in range(n_roi_raw):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -420,7 +420,7 @@ if __name__ == '__main__':
     fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf' 
     for roi_ind in range(n_roi_raw):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -445,7 +445,7 @@ if __name__ == '__main__':
     fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf' 
     for roi_ind in range(n_roi_raw):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(6, 4))
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
