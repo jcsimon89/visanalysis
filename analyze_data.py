@@ -533,37 +533,50 @@ if __name__ == '__main__':
     #         for roi_ind in range(n_roi):
     #             for u_ind, up in enumerate(unique_intensity_values[sn]):
                     
-    #             # mean response per roi
-    #             ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
-    #             ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
-    #             ax[ch_ind, u_ind].set_xlabel('Time (s)')
-    #             ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
-    #             # individual responses per roi
-    #             ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], roi_data[sn,ch]['epoch_response'][roi_ind, :, :].T)
-    #             ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
-    #             ax[ch_ind, u_ind].set_xlabel('Time (s)')
-    #             ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
-    #         # avg intensity per roi
-    #         ax[ch_ind, series_ind].plot(roi_data[sn,ch]['roi_response'][roi_ind].T)
-    #         ax[ch_ind, series_ind].set_xlabel('Frame')
-    #         ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
-    #         ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
+    #                 # mean response per roi
+    #                 fh, ax = plt.subplots(1, 1, figsize=(6, 6*(9/16)),constrained_layout = True)
+    #                 ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
+    #                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+    #                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
+    #                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+    #                 if save_figs:
+    #                     #fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+    #                     #plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+    #                 if show_figs:
+    #                     plt.show()
+
+    #                 plt.close()
+    #                 # individual responses per roi
+    #                 fh, ax = plt.subplots(1, 1, figsize=(6, 6*(9/16)),constrained_layout = True)
+    #                 ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], roi_data[sn,ch]['epoch_response'][roi_ind, :, :].T)
+    #                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+    #                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
+    #                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+    #             # avg intensity per roi
+    #             fh, ax = plt.subplots(1, 1, figsize=(6, 6*(9/16)),constrained_layout = True)
+    #             ax[ch_ind, series_ind].plot(roi_data[sn,ch]['roi_response'][roi_ind].T)
+    #             ax[ch_ind, series_ind].set_xlabel('Frame')
+    #             ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
+    #             ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
             
     #         for u_ind, up in enumerate(unique_intensity_values[sn]):
     #             # all mean roi responses plotted together
+    #             fh, ax = plt.subplots(1, 1, figsize=(6, 6*(9/16)),constrained_layout = True)
     #             ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
     #             ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
     #             ax[ch_ind, u_ind].set_xlabel('Time (s)')
     #             ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
                   
-    #             if tag == 'final'
-    #             # all mean roi responses - combined, with SEM :TODO
-    #               ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T) :TODO sum over correct dim
-    #               ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
-    #               ax[ch_ind, u_ind].set_xlabel('Time (s)')
-    #               ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+    #             if tag == 'final':
+    #                 # all mean roi responses - combined, with SEM :TODO
+    #                 fh, ax = plt.subplots(1, 1, figsize=(6, 6*(9/16)),constrained_layout = True)
+    #                 ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T) #:TODO sum over correct dim
+    #                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+    #                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
+    #                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
 
     #             # avg intensity all rois
+    #             fh, ax = plt.subplots(1, 1, figsize=(6, 6*(9/16)),constrained_layout = True)
     #             ax[ch_ind, series_ind].plot(roi_data[sn,ch]['roi_response'][roi_ind].T) #:TODO sum over correct dimension
     #             ax[ch_ind, series_ind].set_xlabel('Frame')
     #             ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
