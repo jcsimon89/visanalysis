@@ -65,7 +65,8 @@ os.system('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
-                + ' --save_figs ' + save_figs)
+                + ' --save_figs ' + save_figs
+                + ' --tag ' + tag)
 
 
 #%% select_final_rois
