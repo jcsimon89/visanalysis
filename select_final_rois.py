@@ -148,11 +148,15 @@ if __name__ == '__main__':
 
     for current_series in series_num:
         sn = 'sn' + current_series
+
+        
+        roi_data_final[sn]
+            
         for current_channel in func_channels_num:
             ch = 'ch' + current_channel
             roi_data_final[sn,ch] = {}
-            roi_data_final[sn,ch]['roi_image'] = [roi_data[sn,ch]['roi_image'][i] for i in roi_ind_final]
-            roi_data_final[sn,ch]['roi_mask'] = [roi_data[sn,ch]['roi_mask'][i] for i in roi_ind_final]
+            #roi_data_final[sn,ch]['roi_image'] = [roi_data[sn,ch]['roi_image'][i] for i in roi_ind_final]
+            #roi_data_final[sn,ch]['roi_mask'] = [roi_data[sn,ch]['roi_mask'][i] for i in roi_ind_final]
             roi_data_final[sn,ch]['roi_response'] = [roi_data[sn,ch]['roi_response'][i] for i in roi_ind_final]
 
     if save:
