@@ -422,7 +422,32 @@ if __name__ == '__main__':
 
         plt.close()
 
-    # plot 6: mean responses (25ms flashes)
+    # plot 6: mean responses (25ms flashes) - all rois
+    sn = short_flash_series
+    fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
+    fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
+    fig_format = '.pdf' 
+    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
+    for ch_ind, current_channel in enumerate(func_channels_num):
+        ch = 'ch' + current_channel
+        for u_ind, up in enumerate(unique_intensity_values[sn]):
+            ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
+            ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+            ax[ch_ind, u_ind].set_xlabel('Time (s)')
+            ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+    plt.suptitle('Mean responses, {} Flash, all {} rois'.format(fig_stim_time,tag))
+
+    if save_figs:
+        fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+        plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+    if show_figs:
+        plt.show()
+
+    plt.close()
+    
+        
+    # plot 7: mean responses (25ms flashes)
     sn = short_flash_series
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
@@ -447,7 +472,31 @@ if __name__ == '__main__':
 
         plt.close()
     
-    # plot 7: mean responses (300ms flashes)
+    # plot 8: mean responses (300ms flashes) - all rois
+    sn = long_flash_series
+    fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
+    fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
+    fig_format = '.pdf' 
+    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
+    for ch_ind, current_channel in enumerate(func_channels_num):
+        ch = 'ch' + current_channel
+        for u_ind, up in enumerate(unique_intensity_values[sn]):
+            ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
+            ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+            ax[ch_ind, u_ind].set_xlabel('Time (s)')
+            ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+    plt.suptitle('Mean responses, {} Flash, all {} rois'.format(fig_stim_time,tag))
+
+    if save_figs:
+        fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+        plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+    if show_figs:
+        plt.show()
+
+    plt.close()
+    
+    # plot 9: mean responses (300ms flashes)
     sn = long_flash_series 
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
@@ -472,24 +521,11 @@ if __name__ == '__main__':
 
         plt.close()
     
-
-    # ##TODO: select rois to keep?
-    # roi_ind_final = [] # enter good rois manually for now
-    # roi_data_final = {}
-
-    # for current_series in series_num:
-    #     sn = 'sn' + current_series
-    #     for current_channel in func_channels_num:
-    #         ch = 'ch' + current_channel
-    #         roi_data_final[sn,ch]['roi_image'] = roi_data[sn,ch]['roi_image'][roi_ind_final]
-    #         roi_data_final[sn,ch]['roi_mask'] = roi_data[sn,ch]['roi_mask'][roi_ind_final]
-    #         roi_data_final[sn,ch]['roi_response'] = roi_data[sn,ch]['roi_response'][roi_ind_final]
+    # single panel plots
+    # target: fly_001/raw_ or final_roi_figs/panels
+    #
 
 
-    ##TODO: write keep_roi_ind to file
-
-# subfunctions (move to top or another file)
-
-# def plot():
+# def plot_mean_responses(series_number,run_parameter,stim_type):
 
 #     return fh, ax
