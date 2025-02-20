@@ -8,11 +8,14 @@ visanalysis shell script for running:
 https://github.com/ClandininLab/visanalysis
 mhturner@stanford.edu
 """
-#TODO:
-# 1. test analyze_data final
-# 2. save single frame figs? add plots: X all roi plot for flash series, all_roi/individual roi single page summary pdf, 
-# 3. future: save pngs and powerpoint slides? add roi image plots, standardize plotting tools in analyze_data, add fano factor to gui
-# COMBINED ANALYSIS!!!
+#TODO: pass roi_mask, roi_image to fly_final.hdf5 in analyze_data (raw)
+# - test analyze_data final
+# - save single frame figs
+# - show stimulus times (shaded)
+# - add plots: all roi plot for flash series - DONE
+# - add plots: all_roi/individual roi single page summary pdf (from single panels)
+# - SHARED_ANALYSIS.PY!!!
+# - future: save pngs and powerpoint slides? add roi image plots, standardize plotting tools in analyze_data, add fano factor to gui
 
 #%% INITIALIZE ENVIRONMENT
 
@@ -98,3 +101,4 @@ os.system('python ' + analyze_data_path
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
                 + ' --tag ' + tag)
+# %%
