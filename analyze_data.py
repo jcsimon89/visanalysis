@@ -427,7 +427,7 @@ if __name__ == '__main__':
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name = 'mean_responses_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
     fig_format = '.pdf' 
-    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
+    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
     for ch_ind, current_channel in enumerate(func_channels_num):
         ch = 'ch' + current_channel
         for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -476,7 +476,7 @@ if __name__ == '__main__':
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name = 'mean_responses_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
     fig_format = '.pdf' 
-    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
+    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
     for ch_ind, current_channel in enumerate(func_channels_num):
         ch = 'ch' + current_channel
         for u_ind, up in enumerate(unique_intensity_values[sn]):
