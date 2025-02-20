@@ -148,15 +148,32 @@ if __name__ == '__main__':
 
     for current_series in series_num:
         sn = 'sn' + current_series
-
-        
-        roi_data_final[sn]
-            
         for current_channel in func_channels_num:
             ch = 'ch' + current_channel
             roi_data_final[sn,ch] = {}
-            #roi_data_final[sn,ch]['roi_image'] = [roi_data[sn,ch]['roi_image'][i] for i in roi_ind_final]
-            #roi_data_final[sn,ch]['roi_mask'] = [roi_data[sn,ch]['roi_mask'][i] for i in roi_ind_final]
+
+            #figure out mask
+            mask = roi_data_final[sn,ch]['roi_mask'] #nd array with same dims as brain containing diff integer for each roi
+            for i in mask.shape[0]:
+                for j in mask.shape[1]:
+                    try:
+                        for k in mask.shape[2]:
+                            if mask(i,j,k) != 0:
+                                if mask(i,j,k) not in roi_ind_final:
+                                    mask(i,j,k) = 0
+                                else: mask(i,j,k) = roi_ind_final.index(mask(i,j,k)) + 1 #find ind in roi_ind_final and set to that value +1 (since mask counting starts at 1 not 0)
+                                #TODO: start mask value back at 1 for final rois or keep same roi numbers?
+                                # currently renumbering final rois
+                    except:
+                        print('data is not three dimensional, trying with two dimensions')
+                        if mask(i,j) != 0:
+                                if mask(i,j) not in roi_ind_final:
+                                    mask(i,j) = 0
+                                else: mask(i,j) = roi_ind_final.index(mask(i,j)) + 1 #find ind in roi_ind_final and set to that value +1 (since mask counting starts at 1 not 0)
+                                #TODO: start mask value back at 1 for final rois or keep same roi numbers?
+                                # currently renumbering final rois
+            roi_data_final[sn,ch]['roi_mask'] = mask
+            roi_data_final[sn,ch]['roi_image'] = roi_data[sn,ch]['roi_image'] #TODO:i think roi_image is just a meanbrain image but need to check, different for each channel???
             roi_data_final[sn,ch]['roi_response'] = [roi_data[sn,ch]['roi_response'][i] for i in roi_ind_final]
 
     if save:
