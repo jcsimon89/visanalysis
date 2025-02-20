@@ -32,6 +32,7 @@ if __name__ == '__main__':
     parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
     parser.add_argument("--show_figs", nargs="?", help="True/False")
     parser.add_argument("--save_figs", nargs="?", help="True/False")
+    parser.add_argument("--tag", nargs="?", help="raw/final")
     args = parser.parse_args()
 
     experiment_file_directory = args.experiment_file_directory
@@ -55,9 +56,16 @@ if __name__ == '__main__':
         print('not able to interperet save_figs flag, must be "True" or "False", default = False')
     print('save_figs: ' + str(save_figs))
 
+    if args.tag == 'raw' or 'final':
+        tag = args.tag
+    else:
+        NameError('not able to interperet --tag, must be "raw" or "final", datatype = string')
 
     # hardcoded file names
-    experiment_file_name = 'fly.hdf5'
+    if tag == 'raw':
+        experiment_file_name = 'fly.hdf5'
+    elif tag == 'final':
+        experiment_file_name = 'fly_final.hdf5'
     json_file_name = 'fly.json'
     response_set_name_prefix = 'mask_' #once channel is added, will be of form mask_ch1 (these are names saved from process_data.py)
 
@@ -196,8 +204,8 @@ if __name__ == '__main__':
     #extract number of raw rois from hdf5 (assumes all series have same number of rois which is true if process_data.py was used to make rois)
     sn = 'sn' + series_num[0] #use  first series
     ch = 'ch' + func_channels_num[0] # use first functional channel (arbitrary but shouldnt matter)
-    n_roi_raw = len(roi_data[sn,ch]['roi_response'])
-    print('n_roi_raw = ' + str(n_roi_raw))
+    n_roi = len(roi_data[sn,ch]['roi_response'])
+    print('n_roi = ' + str(n_roi))
 
 
     """ 
@@ -273,9 +281,9 @@ if __name__ == '__main__':
             print('25ms flash series: ' + short_flash_series)
 
     # make raw fig save directory (if it doesn't exist)
-    raw_figs_folder_name = 'raw_roi_figs'
-    raw_figs_dir = os.path.join(experiment_file_directory,raw_figs_folder_name)
-    os.makedirs(raw_figs_dir, exist_ok=True)
+    figs_folder_name = tag + '_roi_figs'
+    figs_dir = os.path.join(experiment_file_directory,figs_folder_name)
+    os.makedirs(figs_dir, exist_ok=True)
 
 
 
@@ -300,7 +308,7 @@ if __name__ == '__main__':
     plt.suptitle("search stimulus, mean response, all rois")
 
     if save_figs:
-        plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+        plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
     if show_figs:
         plt.show()
@@ -314,7 +322,7 @@ if __name__ == '__main__':
     fig_name_string = 'search_mean_response'
     fig_format = '.pdf'
     #[plot_tools.cleanAxes(x) for x in ax.ravel()]
-    for roi_ind in range(n_roi_raw):
+    for roi_ind in range(n_roi):
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
         #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
         for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
@@ -325,11 +333,11 @@ if __name__ == '__main__':
                 ax[ch_ind,u_ind].set_ylabel('Mean Response (dF/F)')
                 ax[ch_ind,u_ind].set_xlabel('Time (s)')
                 #plot stimulus time???
-        plt.suptitle("search stimulus, mean response, raw roi {} ".format(roi_ind))
+        plt.suptitle("search stimulus, mean response, {} roi {} ".format(tag,roi_ind))
         
         if save_figs:
             fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
-            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
         if show_figs:
             plt.show()
@@ -341,7 +349,7 @@ if __name__ == '__main__':
     # plot 3: avg roi intensity over series (1, 2, 3) - for each roi
     fig_name_string = 'mean_intensity'
     fig_format = '.pdf'
-    for roi_ind in range(n_roi_raw):
+    for roi_ind in range(n_roi):
         fh, ax = plt.subplots(len(func_channels_num), len(series_num), figsize=(16, 9))
         for series_ind, current_series in enumerate(series_num):
             sn = 'sn' + current_series
@@ -351,11 +359,11 @@ if __name__ == '__main__':
                 ax[ch_ind, series_ind].set_xlabel('Frame')
                 ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
                 ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
-        plt.suptitle('mean roi intensity, raw roi {}'.format(roi_ind))
+        plt.suptitle('mean roi intensity, {} roi {}'.format(tag,roi_ind))
 
         if save_figs:
             fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
-            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
         if show_figs:
             plt.show()
@@ -368,7 +376,7 @@ if __name__ == '__main__':
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name_string = 'individual_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf'
-    for roi_ind in range(n_roi_raw):
+    for roi_ind in range(n_roi):
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
@@ -377,11 +385,11 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
-        plt.suptitle('Individual responses, {} Flash, raw roi {}'.format(fig_stim_time,roi_ind))
+        plt.suptitle('Individual responses, {} Flash, {} roi {}'.format(fig_stim_time,tag,roi_ind))
 
         if save_figs:
             fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
-            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
         if show_figs:
             plt.show()
@@ -394,7 +402,7 @@ if __name__ == '__main__':
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name_string = 'individual_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf'
-    for roi_ind in range(n_roi_raw):
+    for roi_ind in range(n_roi):
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
@@ -403,11 +411,11 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
-        plt.suptitle('Individual responses, {} Flash, raw roi {}'.format(fig_stim_time,roi_ind))
+        plt.suptitle('Individual responses, {} Flash, {} roi {}'.format(fig_stim_time,tag,roi_ind))
 
         if save_figs:
             fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
-            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
         if show_figs:
             plt.show()
@@ -419,7 +427,7 @@ if __name__ == '__main__':
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf' 
-    for roi_ind in range(n_roi_raw):
+    for roi_ind in range(n_roi):
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
@@ -428,11 +436,11 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
-        plt.suptitle('Mean responses, {} Flash, raw roi {}'.format(fig_stim_time,roi_ind))
+        plt.suptitle('Mean responses, {} Flash, {} roi {}'.format(fig_stim_time,tag,roi_ind))
 
         if save_figs:
             fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
-            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
         if show_figs:
             plt.show()
@@ -444,7 +452,7 @@ if __name__ == '__main__':
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf' 
-    for roi_ind in range(n_roi_raw):
+    for roi_ind in range(n_roi):
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(16, 9))
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
@@ -453,11 +461,11 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
-        plt.suptitle('Mean responses, {} Flash, raw roi {}'.format(fig_stim_time,roi_ind))
+        plt.suptitle('Mean responses, {} Flash, {} roi {}'.format(fig_stim_time,tag,roi_ind))
 
         if save_figs:
             fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
-            plt.savefig(os.path.join(raw_figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
         if show_figs:
             plt.show()
