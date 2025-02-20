@@ -178,7 +178,7 @@ if __name__ == '__main__':
     else:
         print('data does not appear to be a volume or a slice, num_spatial_dim = ' + str(num_spacial_dim))
 
-    n_roi = np.unique(roi_mask) # numpy integer
+    n_roi = len(np.unique(roi_mask))-1 # numpy integer
     print('number of rois in roi_mask: ' + str(n_roi))
 
     ## extract other important metadata for analysis
