@@ -521,9 +521,46 @@ if __name__ == '__main__':
 
         plt.close()
     
-    # single panel plots
+    # make all single panel plots
     # target: fly_001/raw_ or final_roi_figs/panels
-    #
+    
+    # for series_ind, current_series in enumerate(series_num):
+    #     sn = 'sn' + current_series
+    #     for ch_ind, current_channel in enumerate(func_channels_num):
+    #         ch = 'ch' + current_channel
+    #         for roi_ind in range(n_roi):
+    #             for u_ind, up in enumerate(unique_intensity_values[sn]):
+                    
+    #             # mean response per roi
+    #             ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
+    #             ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+    #             ax[ch_ind, u_ind].set_xlabel('Time (s)')
+    #             ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+    #             # individual responses per roi
+    #             ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], roi_data[sn,ch]['epoch_response'][roi_ind, :, :].T)
+    #             ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+    #             ax[ch_ind, u_ind].set_xlabel('Time (s)')
+    #             ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+    #         # avg intensity per roi
+    #         ax[ch_ind, series_ind].plot(roi_data[sn,ch]['roi_response'][roi_ind].T)
+    #         ax[ch_ind, series_ind].set_xlabel('Frame')
+    #         ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
+    #         ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
+            
+    #         for u_ind, up in enumerate(unique_intensity_values[sn]):
+    #             # all mean roi responses
+    #             ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
+    #             ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+    #             ax[ch_ind, u_ind].set_xlabel('Time (s)')
+    #             ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+    #             # avg intensity all rois
+    #             ax[ch_ind, series_ind].plot(roi_data[sn,ch]['roi_response'][roi_ind].T) #:TODO sum over correct dimension
+    #             ax[ch_ind, series_ind].set_xlabel('Frame')
+    #             ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
+    #             ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
+    
+    # Make multi panel plots from panels
+    
 
 
 # def plot_mean_responses(series_number,run_parameter,stim_type):
