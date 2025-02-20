@@ -8,7 +8,7 @@ https://github.com/ClandininLab/visanalysis
 mhturner@stanford.edu
 """
 
-#%% Initialize environment
+#%% INITIALIZE ENVIRONMENT
 
 import sys
 import os
@@ -22,7 +22,7 @@ from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
 import h5py
 
-#%% initialize arguments
+#%% INITIALIZE ARGUMENTS
 
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
@@ -31,8 +31,8 @@ rig = 'Bruker' #string "Bruker" or "AODscope"
 
 # process_data
 series_number_for_roi_selection = '3' #string 
-run_gui = 'True' #string "True" or "False", default = "False"
-attach_metadata = 'True' #string "True" or "False", default = "False"
+run_gui = 'False' #string "True" or "False", default = "False"
+attach_metadata = 'False' #string "True" or "False", default = "False"
 
 # analyze_data
 show_figs = 'False' #string "True" or "False", default = "False"
@@ -42,7 +42,7 @@ save_figs = 'True' #string "True" or "False", default = "False"
 save_hdf5 = 'True'#string "True" or "False", default = "False"
 
 
-#%% process_data
+#%% PROCESS_DATA
 
 
 process_data_path = str(os.path.join(base_path,'process_data.py'))
@@ -55,7 +55,7 @@ os.system('python ' + process_data_path
                 + ' --attach_metadata ' + attach_metadata)
 
 
-#%% analyze_data raw
+#%% ANALYZE_DATA RAW
 
 
 tag = 'raw' #string "raw" or "final"
@@ -69,7 +69,7 @@ os.system('python ' + analyze_data_path
                 + ' --tag ' + tag)
 
 
-#%% select_final_rois
+#%% SELECT_FINAL_ROIS
 
 
 select_final_rois_path = str(os.path.join(base_path,'select_final_rois.py'))
@@ -80,7 +80,7 @@ os.system('python ' + select_final_rois_path
                 + ' --save ' + save_hdf5)
 
 
-#%% analyze_data final
+#%% ANALYZE_DATA FINAL
 
 
 tag = 'final' #string "raw" or "final"
