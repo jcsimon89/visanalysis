@@ -8,8 +8,9 @@ visanalysis shell script for running:
 https://github.com/ClandininLab/visanalysis
 mhturner@stanford.edu
 """
-#TODO: pass roi_mask, roi_image to fly_final.hdf5 in select_final_rois
-# - test analyze_data final
+#TODO: 
+# - pass roi_mask, roi_image to fly_final.hdf5 in select_final_rois - TEST
+# - analyze_data final - TEST
 # - save single frame pdfs and pngs
 # - show stimulus times (shaded)
 # - add plots: all roi plot for flash series - DONE
