@@ -55,9 +55,10 @@ os.system('python ' + process_data_path
                 + ' --attach_metadata ' + attach_metadata)
 
 
-#%% analyze_data
+#%% analyze_data raw
 
 
+tag = 'raw' #string "raw" or "final"
 analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
 
 os.system('python ' + analyze_data_path
@@ -78,4 +79,15 @@ os.system('python ' + select_final_rois_path
                 + ' --save ' + save_hdf5)
 
 
-# %%
+#%% analyze_data final
+
+
+tag = 'final' #string "raw" or "final"
+analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
+
+os.system('python ' + analyze_data_path
+                + ' --experiment_file_directory ' + experiment_file_directory
+                + ' --rig ' + rig
+                + ' --show_figs ' + show_figs
+                + ' --save_figs ' + save_figs
+                + ' --tag ' + tag)
