@@ -18,6 +18,7 @@ from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
 import h5py
+import scipy.stats
 
 plt.ioff() #don't show plots unless called for with plt.show() 
 
@@ -182,7 +183,7 @@ if __name__ == '__main__':
             roi_data[sn,ch] = ID.getRoiResponses(response_set_name, roi_prefix='aligned') 
             #print('roi_data keys: ' + repr(roi_data.keys()))
             #print('roi_data[sn,ch] keys: ' + repr(roi_data[sn,ch].keys()))
-            
+            print('current series, channel: ' + str(sn) + ', ' + str(ch))
             unique_intensity_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')            
             # unique_intensity_values: dict (key = sn) of lists of each unique value of parameter_key (?)
             # mean_response: dict (key = sn,ch) of numpy arrays (nroi x unique values of parameter_key x time)
@@ -300,11 +301,11 @@ if __name__ == '__main__':
     for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
         ch = 'ch' + current_channel
         for u_ind, up in enumerate(unique_intensity_values[sn]):
-            ax[ch_ind,u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
-            ax[ch_ind,u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
-            ax[ch_ind,u_ind].set_ylabel('Mean Response (dF/F)')
-            ax[ch_ind,u_ind].set_xlabel('Time (s)')
-            #plot stimulus time???
+            ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
+            ax[ch_ind, u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
+            ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
+            ax[ch_ind, u_ind].set_xlabel('Time (s)')
+            ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
     plt.suptitle("search stimulus, mean response, all {} rois".format(tag))
 
     if save_figs:
@@ -328,11 +329,11 @@ if __name__ == '__main__':
         for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
-                ax[ch_ind,u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
-                ax[ch_ind,u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
-                ax[ch_ind,u_ind].set_ylabel('Mean Response (dF/F)')
-                ax[ch_ind,u_ind].set_xlabel('Time (s)')
-                #plot stimulus time???
+                ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
+                ax[ch_ind, u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
+                ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
+                ax[ch_ind, u_ind].set_xlabel('Time (s)')
+                ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
         plt.suptitle("search stimulus, mean response, {} roi {} ".format(tag,roi_ind))
         
         if save_figs:
@@ -369,9 +370,31 @@ if __name__ == '__main__':
             plt.show()
 
         plt.close()
-        
 
-    # plot 4: individual responses (25ms flashes)
+    # plot 4: avg roi intensity over series (1, 2, 3) - for all rois
+    fig_name = 'mean_intensity_all_{}_rois'.format(tag)
+    fig_format = '.pdf'
+    fh, ax = plt.subplots(len(func_channels_num), len(series_num), figsize=(12, 12*(9/16)),constrained_layout = True)
+    for series_ind, current_series in enumerate(series_num):
+        sn = 'sn' + current_series
+        for ch_ind, current_channel in enumerate(func_channels_num):
+            ch = 'ch' + current_channel
+            ax[ch_ind, series_ind].plot(np.mean(roi_data[sn,ch]['roi_response'][:], axis=0).T)
+            ax[ch_ind, series_ind].set_xlabel('Frame')
+            ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
+            ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
+    plt.suptitle('mean roi intensity, all {} rois'.format(tag))
+
+    if save_figs:
+        plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+    if show_figs:
+        plt.show()
+
+    plt.close()
+    
+
+    # plot 5: individual responses (25ms flashes)
     sn = short_flash_series 
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name_string = 'individual_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
@@ -385,6 +408,7 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+                ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
         plt.suptitle('Individual responses, {} Flash, {} roi {}'.format(fig_stim_time,tag,roi_ind))
 
         if save_figs:
@@ -397,7 +421,7 @@ if __name__ == '__main__':
         plt.close()
         
     
-    # plot 5: individual responses (300ms flashes)
+    # plot 6: individual responses (300ms flashes)
     sn = long_flash_series 
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name_string = 'individual_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
@@ -411,6 +435,7 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+                ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
         plt.suptitle('Individual responses, {} Flash, {} roi {}'.format(fig_stim_time,tag,roi_ind))
 
         if save_figs:
@@ -422,7 +447,7 @@ if __name__ == '__main__':
 
         plt.close()
 
-    # plot 6: mean responses (25ms flashes) - all rois
+    # plot 7: mean responses (25ms flashes) - all rois
     sn = short_flash_series
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name = 'mean_responses_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
@@ -435,6 +460,7 @@ if __name__ == '__main__':
             ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
             ax[ch_ind, u_ind].set_xlabel('Time (s)')
             ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+            ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
     plt.suptitle('Mean responses, {} Flash, all {} rois'.format(fig_stim_time,tag))
 
     if save_figs:
@@ -446,7 +472,7 @@ if __name__ == '__main__':
     plt.close()
     
         
-    # plot 7: mean responses (25ms flashes)
+    # plot 8: mean responses (25ms flashes)
     sn = short_flash_series
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
@@ -460,6 +486,7 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+                ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
         plt.suptitle('Mean responses, {} Flash, {} roi {}'.format(fig_stim_time,tag,roi_ind))
 
         if save_figs:
@@ -471,7 +498,7 @@ if __name__ == '__main__':
 
         plt.close()
     
-    # plot 8: mean responses (300ms flashes) - all rois
+    # plot 9: mean responses (300ms flashes) - all rois
     sn = long_flash_series
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name = 'mean_responses_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
@@ -484,6 +511,7 @@ if __name__ == '__main__':
             ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
             ax[ch_ind, u_ind].set_xlabel('Time (s)')
             ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+            ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
     plt.suptitle('Mean responses, {} Flash, all {} rois'.format(fig_stim_time,tag))
 
     if save_figs:
@@ -494,7 +522,7 @@ if __name__ == '__main__':
 
     plt.close()
     
-    # plot 9: mean responses (300ms flashes)
+    # plot 10: mean responses (300ms flashes)
     sn = long_flash_series 
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
@@ -508,6 +536,7 @@ if __name__ == '__main__':
                 ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+                ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
         plt.suptitle('Mean responses, {} Flash, {} roi {}'.format(fig_stim_time,tag,roi_ind))
 
         if save_figs:
@@ -518,10 +547,93 @@ if __name__ == '__main__':
             plt.show()
 
         plt.close()
+
+    # plot 11: combined mean response (search stim) - combined mean of all final rois
+    if tag == 'final':
+        sn = search_series
+        fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
+        fig_name = 'combined_mean_responses_search_stim_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
+        fig_format = '.pdf' 
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        for ch_ind, current_channel in enumerate(func_channels_num):
+            ch = 'ch' + current_channel
+            for u_ind, up in enumerate(unique_intensity_values[sn]):
+                x = roi_data[sn,ch]['time_vector']
+                y = np.mean(mean_response[sn,ch][:, u_ind, :],0).T
+                error = scipy.stats.sem(mean_response[sn,ch][:, u_ind, :],0).T
+                ax[ch_ind, u_ind].plot(x, y, color = 'k')
+                ax[ch_ind, u_ind].fill_between(x, y-error, y+error, color = 'c', alpha = 0.3)
+                ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+                ax[ch_ind, u_ind].set_xlabel('Time (s)')
+                ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+                ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+        plt.suptitle('combined mean response, {} Flash, all {} rois'.format(fig_stim_time,tag))
+
+        if save_figs:
+            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+        if show_figs:
+            plt.show()
+
+        plt.close()  
     
-    # plot 10: all final rois - combined mean response (for each series)
+    # plot 12: combined mean response (25ms flashes) - combined mean of all final rois
+    if tag == 'final':
+        sn = short_flash_series
+        fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
+        fig_name = 'combined_mean_responses_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
+        fig_format = '.pdf' 
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        for ch_ind, current_channel in enumerate(func_channels_num):
+            ch = 'ch' + current_channel
+            for u_ind, up in enumerate(unique_intensity_values[sn]):
+                x = roi_data[sn,ch]['time_vector']
+                y = np.mean(mean_response[sn,ch][:, u_ind, :],0).T
+                error = scipy.stats.sem(mean_response[sn,ch][:, u_ind, :],0).T
+                ax[ch_ind, u_ind].plot(x, y, color = 'k')
+                ax[ch_ind, u_ind].fill_between(x, y-error, y+error, color = 'c', alpha = 0.3)
+                ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+                ax[ch_ind, u_ind].set_xlabel('Time (s)')
+                ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+                ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+        plt.suptitle('combined mean response, {} Flash, all {} rois'.format(fig_stim_time,tag))
 
+        if save_figs:
+            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
+        if show_figs:
+            plt.show()
+
+        plt.close()
+
+    # plot 13: combined mean response (300ms flashes) - combined mean of all final rois
+    if tag == 'final':
+        sn = long_flash_series
+        fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
+        fig_name = 'combined_mean_responses_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
+        fig_format = '.pdf' 
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        for ch_ind, current_channel in enumerate(func_channels_num):
+            ch = 'ch' + current_channel
+            for u_ind, up in enumerate(unique_intensity_values[sn]):
+                x = roi_data[sn,ch]['time_vector']
+                y = np.mean(mean_response[sn,ch][:, u_ind, :],0).T
+                error = scipy.stats.sem(mean_response[sn,ch][:, u_ind, :],0).T
+                ax[ch_ind, u_ind].plot(x, y, color = 'k')
+                ax[ch_ind, u_ind].fill_between(x, y-error, y+error, color = 'c', alpha = 0.3)
+                ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+                ax[ch_ind, u_ind].set_xlabel('Time (s)')
+                ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+                ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+        plt.suptitle('combined mean response, {} Flash, all {} rois'.format(fig_stim_time,tag))
+
+        if save_figs:
+            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+        if show_figs:
+            plt.show()
+
+        plt.close()
 
     # make all single panel plots
     # target: fly_001/raw_ or final_roi_figs/panels
