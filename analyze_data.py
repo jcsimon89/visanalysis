@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
+from visanalysis.util import plot_tools
 import h5py
 import scipy.stats
 
@@ -204,10 +205,19 @@ if __name__ == '__main__':
             
     #extract number of raw rois from hdf5 (assumes all series have same number of rois which is true if process_data.py was used to make rois)
     sn = 'sn' + series_num[0] #use  first series
-    ch = 'ch' + func_channels_num[0] # use first functional channel (arbitrary but shouldnt matter)
+    ch = 'ch' + struct_channel_num[0] # use structural channel (arbitrary but shouldnt matter)
     n_roi = len(roi_data[sn,ch]['roi_response'])
     print('n_roi = ' + str(n_roi))
 
+    # ## overlay all roi_masks on roi_image
+    # roi_mask_bool = bruker.convertMaskToBool(roi_data[sn,ch]['roi_mask'])
+    # if len(roi_mask_bool.shape)==3: #data is 2d
+    #     im = plot_tools.overlayImage(roi_data[sn,ch]['roi_image'], roi_mask_bool, alpha=0.5, colors=None)
+    #     #show image
+    # elif len(roi_mask_bool.shape==4):
+    #     for slice in range(roi_mask_bool.shape[3]):
+    #         im = plot_tools.overlayImage(roi_data[sn,ch]['roi_image'][:,:,slice], roi_mask_bool[:,:,:,slice], alpha=0.5, colors=None)
+    #     #show image
 
     """ 
     plots to make:
