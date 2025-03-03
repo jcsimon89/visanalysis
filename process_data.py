@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
+from visanalysis.util import plot_tools
 
 # call structure: python process_data.py --experiment_file_directory "path" --rig "rigID" --series_number "series_number" --run_gui "True/False" --attach_metadata "True/False"
 
@@ -144,11 +145,11 @@ if __name__ == '__main__':
 
     # Retrieve saved mask region responses from data file
 
-    roi_mask_binary = ID.getRoiMasks(roi_set_name)['roi_mask'] #shape: roi_index, x, y ,(z)
+    roi_mask_bool = ID.getRoiMasks(roi_set_name)['roi_mask'] #shape: roi_index, x, y ,(z)
     roi_image = ID.getRoiMasks(roi_set_name)['roi_image'] #shape: x,y,(z)
 
     print('dimensions of roi_image: ' + str(np.shape(roi_image)))
-    print('dimensions of roi_mask_binary: ' + str(np.shape(roi_mask_binary)))
+    print('dimensions of roi_mask_bool: ' + str(np.shape(roi_mask_bool)))
 
     # figure out if data is volume or slice
     num_spacial_dim = len(roi_image.shape)
@@ -157,29 +158,51 @@ if __name__ == '__main__':
     fly_metadata = ID.getSubjectMetadata()
     print('fly_metadata: ' + repr(fly_metadata))
    
-    # convert roi mask to numbers for each separate roi
-    roi_mask = np.zeros(roi_mask_binary.shape[1:])
+    # convert roi mask to unique numbers for each separate roi (background = 0, first roi =1, second roi =2 etc.)
+    # this is how masks need to be formatted for plug.saveRegionResponsesFromMask()
+    roi_mask = np.zeros(roi_mask_bool.shape[1:])
     print('dimensions of func data: ' + str(np.shape(roi_mask))) # shape:x,y,(z)
 
     if num_spacial_dim == 3: #data is a volume
-        for roi_ind in range(roi_mask_binary.shape[0]):
-            for i in range(roi_mask_binary.shape[1]):
-                for j in range(roi_mask_binary.shape[2]):
-                    for k in range(roi_mask_binary.shape[3]):
-                        if roi_mask_binary[roi_ind,i,j,k] == True:
+        for roi_ind in range(roi_mask_bool.shape[0]):
+            for i in range(roi_mask_bool.shape[1]):
+                for j in range(roi_mask_bool.shape[2]):
+                    for k in range(roi_mask_bool.shape[3]):
+                        if roi_mask_bool[roi_ind,i,j,k] == True:
                             roi_mask[i,j,k]=roi_ind+1 #since roi_ind starts at 0 and we want to label the first roi with value=1
 
     elif num_spacial_dim == 2: #data is a slice
-        for roi_ind in range(roi_mask_binary.shape[0]):
-            for i in range(roi_mask_binary.shape[1]):
-                for j in range(roi_mask_binary.shape[2]):
-                    if roi_mask_binary[roi_ind,i,j] == True:
+        for roi_ind in range(roi_mask_bool.shape[0]):
+            for i in range(roi_mask_bool.shape[1]):
+                for j in range(roi_mask_bool.shape[2]):
+                    if roi_mask_bool[roi_ind,i,j] == True:
                             roi_mask[i,j]=roi_ind+1 #since roi_ind starts at 0 and we want to label the first roi with value=1
     else:
         print('data does not appear to be a volume or a slice, num_spatial_dim = ' + str(num_spacial_dim))
 
     n_roi = len(np.unique(roi_mask))-1 # numpy integer
     print('number of rois in roi_mask: ' + str(n_roi))
+
+    ## visanalysis does some weird shit when plotting mean image.  to undo here (assuming gui isnt fixed), need to rotate counterclockwise 90deg then flip vertically
+    ## THIS IS CRITICAL IF YOU ARE GOING TO TAKE MASKS DRAWN WITH THE GUI AND APPLY THEM TO IMAGES LOADED OUTSIDE THE GUI!!!
+    
+    # roi_mask = np.flipud(np.rot90(roi_mask, k=1, axes=(0, 1)))
+    # roi_image = np.flipud(np.rot90(roi_mask, k=1, axes=(0, 1)))
+
+
+    ## plot rois on roi_image
+    # print('dimensions of roi_image: ' + str(np.shape(roi_image)))
+    # print('dimensions of roi_mask: ' + str(np.shape(roi_mask)))
+    # print('np.squeeze(roi_image[:,:,0]).shape: ' + repr(np.squeeze(roi_image[:,:,0].shape)))
+    # if num_spacial_dim == 3: #data is a volume
+    #     for slice in range(roi_mask.shape[-1]):
+    #         fh, ax = plt.subplots(1,1)
+    #         #plt.imshow(plot_tools.overlayImage(roi_image, mask=np.squeeze(roi_mask_bool), alpha=0.5, colors=None, z=slice))#np.squeeze(roi_image[:,:,slice]))
+    #         ax.imshow(roi_image[:,:,slice])
+    #         for i in range(0,1):
+    #             ax.imshow(roi_mask_bool[i,:,:,slice], alpha=0.5, zorder=1)
+            
+    #         plt.show()
 
     ## extract other important metadata for analysis
     series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path))) # datatype = list of strings but individual series numbers will be converted to int before using methods
@@ -223,8 +246,8 @@ if __name__ == '__main__':
                                     image_file_name=image_file_name,
                                     series_number=current_series,
                                     channel=current_channel)
-            
-            # Save region responses and mask to data file #TODO: make sure not to overwrite mask!
+
+            # save mask and responses to hdf5 (roi_prefix = aligned)
 
             plug.saveRegionResponsesFromMask(file_path=experiment_file_path,
                                                 series_number=current_series,
