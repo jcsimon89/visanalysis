@@ -205,10 +205,28 @@ class BrukerPlugin(base_plugin.BasePlugin):
 
     # %%
     ###########################################################################
-    # Functions for timing and metadata
+    # Functions for timing and metadata etc.
     #   Accessible outside of the plugin object
     ###########################################################################
 
+def convertMaskToBool(mask, include_zero=False):
+        # take mask (x,y,(z) with 0 for background and unique number for each roi)
+        # and convert to boolean mask (rois,x,y,(z) with False for background and True for roi)
+
+        if len(mask.shape)==2:
+            mask = np.expand_dims(mask,3)   # make dummy z axis
+
+        roi_values = np.unique(mask)
+        if not include_zero:
+            roi_values  = roi_values[roi_values != 0] # remove 0
+        
+        mask_bool = np.expand_dims(np.empty_like(mask),0) # add axis 0 for roi_ind
+
+        for ind, roi_val in roi_values:
+            mask_bool[ind,:,:,:] = mask[mask == roi_val]
+        
+        mask_bool = np.squeeze(mask_bool)
+        return mask_bool
 
 def getVoltageRecording(filepath):
     """
