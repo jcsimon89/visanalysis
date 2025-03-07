@@ -87,7 +87,8 @@ def filterDataFiles(data_directory,
                     target_series_metadata={},
                     target_roi_series=[],
                     target_groups=[],
-                    quiet=False):
+                    quiet=False,
+                    recursive=False):
     """
     Searches through a directory of visprotocol datafiles and finds datafiles/series that match the search values
     Can search based on any number of fly metadata params or run parameters
@@ -102,7 +103,7 @@ def filterDataFiles(data_directory,
     Returns
         -matching_series: List of matching series dicts with all fly & run params as well as file name and series number
     """
-    fileNames = glob.glob(data_directory + "/*.hdf5")
+    fileNames = glob.glob(data_directory + "/*.hdf5", recursive=recursive)
     if not quiet:
         print('Found {} files in {}'.format(len(fileNames), data_directory))
 
