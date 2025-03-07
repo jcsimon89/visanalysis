@@ -37,21 +37,20 @@ import h5py
 
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
-experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS139_x_JS251/fly_004' #string to folder containing fly.hdf5 file
-#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS251/fly_002'
+experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS251/fly_007' #string to folder containing fly.hdf5 file
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
 # process_data
 series_number_for_roi_selection = '2' #string 
-run_gui = 'False' #string "True" or "False", default = "False"
-attach_metadata = 'False' #string "True" or "False", default = "False"
+run_gui = 'True' #string "True" or "False", default = "False"
+attach_metadata = 'True' #string "True" or "False", default = "False"
 
 # analyze_data
 show_figs = 'False' #string "True" or "False", default = "False"
 save_figs = 'True' #string "True" or "False", default = "False"
 
 # select_final_rois
-save_hdf5 = 'False'#string "True" or "False", default = "False"
+save_hdf5 = 'True'#string "True" or "False", default = "False"
 
 
 #%% PROCESS_DATA
@@ -105,3 +104,4 @@ os.system('python ' + analyze_data_path
                 + ' --save_figs ' + save_figs
                 + ' --tag ' + tag)
 # %%
+
