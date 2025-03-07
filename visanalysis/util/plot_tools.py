@@ -87,35 +87,43 @@ def addImageScaleBar(ax, image, scale_bar_length, microns_per_pixel, location):
 
 
 def overlayImage(im, mask, alpha, colors=None, z=0):
-    im = im / np.max(im)
+    # image = [x,y,rgb]
+    # mask can be 4d with slices
+    #mask = [rois,x,y,(z)]
+    # mask should be binary (true for mask, false for background)
+
+    im = im / np.max(im) # normalize image
     if len(im.shape) < 3:
-        imRGB = np.tile(im[..., np.newaxis], 3)
+        imRGB = np.tile(im[..., np.newaxis], 3) # add rgb vals as 3rd dim
     else:
         imRGB = im
 
     overlayComponent = 0
     origImageComponent = 0
-    if len(mask[0].shape) == 2:
-        compositeMask = np.tile(mask[0][..., np.newaxis], 3)
+    if len(mask[0].shape) == 2: # mask[0] is first roi
+        compositeMask = np.tile(mask[0][..., np.newaxis], 3) # if mask[0] is 2d, add rgb vals in 3rd dim
     else:
-        compositeMask = np.tile(mask[0][:, :, z, np.newaxis], 3)
+        compositeMask = np.tile(mask[0][:, :, z, np.newaxis], 3) # if mask[0] is 3d, take slice z and then add rgb vals in 3rd dim
     for ind, currentRoi in enumerate(mask):
-        if len(mask[0].shape) == 2:
-            maskRGB = np.tile(currentRoi[..., np.newaxis], 3)
+        if len(mask[0].shape) == 2: 
+            maskRGB = np.tile(currentRoi[..., np.newaxis], 3) # mask with rgb in 3rd dim for specific roi
         else:
-            maskRGB = np.tile(currentRoi[:, :, z, np.newaxis], 3)
+            maskRGB = np.tile(currentRoi[:, :, z, np.newaxis], 3) # mask with rgb in 3rd dim for specific roi
         if colors is None:
             newColor = (1, 0, 0)
         else:
             newColor = colors[ind]
+        
+        #compositeMask = [x,y,rgb]
+        #maskRGB =  [x,y,rgb] for specific roi
 
-        compositeMask = compositeMask + maskRGB
-        overlayComponent += alpha * np.array(newColor) * maskRGB
-        origImageComponent += (1 - alpha) * maskRGB * imRGB
+        compositeMask = compositeMask + maskRGB #add each maskRGB to composite mask as you loop through rois
+        overlayComponent += alpha * np.array(newColor) * maskRGB # make semitransparent mask overlay for specific roi
+        origImageComponent += (1 - alpha) * maskRGB * imRGB # image component in the area where the overlay will happen
 
-    untouched = (compositeMask == False) * imRGB
+    untouched = (compositeMask == False) * imRGB # part of image where no overlay is happening
 
-    im_out = untouched + overlayComponent + origImageComponent
+    im_out = untouched + overlayComponent + origImageComponent # prevents rest of image and underlay from being dimmed during multiple overlays
     im_out = (im_out * 255).astype(np.uint8)
     return im_out
 
