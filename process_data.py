@@ -183,26 +183,6 @@ if __name__ == '__main__':
     n_roi = len(np.unique(roi_mask))-1 # numpy integer
     print('number of rois in roi_mask: ' + str(n_roi))
 
-    ## visanalysis does some weird shit when plotting mean image.  to undo here (assuming gui isnt fixed), need to rotate counterclockwise 90deg then flip vertically
-    ## THIS IS CRITICAL IF YOU ARE GOING TO TAKE MASKS DRAWN WITH THE GUI AND APPLY THEM TO IMAGES LOADED OUTSIDE THE GUI!!!
-    
-    # roi_mask = np.flipud(np.rot90(roi_mask, k=1, axes=(0, 1)))
-    # roi_image = np.flipud(np.rot90(roi_mask, k=1, axes=(0, 1)))
-
-
-    ## plot rois on roi_image
-    # print('dimensions of roi_image: ' + str(np.shape(roi_image)))
-    # print('dimensions of roi_mask: ' + str(np.shape(roi_mask)))
-    # print('np.squeeze(roi_image[:,:,0]).shape: ' + repr(np.squeeze(roi_image[:,:,0].shape)))
-    # if num_spacial_dim == 3: #data is a volume
-    #     for slice in range(roi_mask.shape[-1]):
-    #         fh, ax = plt.subplots(1,1)
-    #         #plt.imshow(plot_tools.overlayImage(roi_image, mask=np.squeeze(roi_mask_bool), alpha=0.5, colors=None, z=slice))#np.squeeze(roi_image[:,:,slice]))
-    #         ax.imshow(roi_image[:,:,slice])
-    #         for i in range(0,1):
-    #             ax.imshow(roi_mask_bool[i,:,:,slice], alpha=0.5, zorder=1)
-            
-    #         plt.show()
 
     ## extract other important metadata for analysis
     series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path))) # datatype = list of strings but individual series numbers will be converted to int before using methods
@@ -242,7 +222,7 @@ if __name__ == '__main__':
             
             #associate image data
 
-            plug.updateImageSeries(data_directory=image_file_directory, #NOTE: doesnt do  anything with current_series!
+            plug.updateImageSeries(data_directory=image_file_directory, #NOTE: doesnt do anything with current_series!
                                     image_file_name=image_file_name,
                                     series_number=current_series,
                                     channel=current_channel)
