@@ -209,15 +209,9 @@ if __name__ == '__main__':
     n_roi = len(roi_data[sn,ch]['roi_response'])
     print('n_roi = ' + str(n_roi))
 
-    # ## overlay all roi_masks on roi_image
-    # roi_mask_bool = bruker.convertMaskToBool(roi_data[sn,ch]['roi_mask'])
-    # if len(roi_mask_bool.shape)==3: #data is 2d
-    #     im = plot_tools.overlayImage(roi_data[sn,ch]['roi_image'], roi_mask_bool, alpha=0.5, colors=None)
-    #     #show image
-    # elif len(roi_mask_bool.shape==4):
-    #     for slice in range(roi_mask_bool.shape[3]):
-    #         im = plot_tools.overlayImage(roi_data[sn,ch]['roi_image'][:,:,slice], roi_mask_bool[:,:,:,slice], alpha=0.5, colors=None)
-    #     #show image
+    ## convert mask format to bool
+    roi_mask_bool = bruker.convertMaskToBool(roi_data[sn,ch]['roi_mask'])
+
 
     """ 
     plots to make:
@@ -272,8 +266,6 @@ if __name__ == '__main__':
     
     """
 
-        #TODO:print figures, show stimulus times (shaded)
-
     # figure out which series is which
 
     search_series = 'sn' + series_num[0] #assume first series is search stim
@@ -284,18 +276,72 @@ if __name__ == '__main__':
         if run_parameters[sn]['stim_time']==0.3 and sn!='sn1':
             long_flash_series = sn
             print('300ms flash series: ' + long_flash_series)
+            break
     
     for series_ind, current_series in enumerate(series_num):
         sn = 'sn' + current_series
         if run_parameters[sn]['stim_time']==0.025:
             short_flash_series = sn
             print('25ms flash series: ' + short_flash_series)
+            break
 
     # make raw fig save directory (if it doesn't exist)
     figs_folder_name = tag + '_roi_figs'
     figs_dir = os.path.join(experiment_file_directory,figs_folder_name)
     os.makedirs(figs_dir, exist_ok=True)
 
+    # Plot: overlay all roi_masks on roi_image
+    fig_name_string = 'mask_overlay_all'
+    fig_format = '.pdf'
+    ch = 'ch' + struct_channel_num[0]
+    for current_series in series_num:
+        sn = 'sn' + current_series
+        if len(roi_mask_bool.shape)==3: #data is 2d
+            im = plot_tools.overlayImage(roi_data[sn,ch]['roi_image'], roi_mask_bool, alpha=0.5, colors=None)
+            fig = plt.subplot(1,1,1)
+            fig.imshow(im)
+            if save_figs:
+                plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+            if show_figs:
+                plt.show()
+        elif len(roi_mask_bool.shape)==4:
+            for slice in range(roi_mask_bool.shape[3]):
+                im = plot_tools.overlayImage(roi_data[sn,ch]['roi_image'][:,:,slice], roi_mask_bool[:,:,:,slice], alpha=0.5, colors=None)
+                fig = plt.subplot(1,1,1)
+                fig.imshow(im)
+                if save_figs:
+                    fig_name = fig_name_string + '_{}_rois_series_{}_'.format(tag,current_series)
+                    plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+                if show_figs:
+                    plt.show()
+
+    # # Plot: individual roi_mask on roi_image (relevant slices)
+    # fig_name_string = 'mask_overlay'
+    # fig_format = '.pdf'
+    # ch = 'ch' + struct_channel_num[0]
+    # for current_series in series_num:
+    #     sn = 'sn' + current_series
+    #     for roi_ind in range(n_roi):
+    #         if len(roi_mask_bool.shape)==3: #data is 2d
+    #             im = plot_tools.overlayImage(roi_data[sn,ch]['roi_image'], roi_mask_bool[roi_ind,...], alpha=0.5, colors=None)
+    #             fig = plt.subplot(1,1,1)
+    #             fig.imshow(im)
+    #             if save_figs:
+    #                 fig_name = fig_name_string + '_roi_{}_series_{}_'.format(roi_ind,current_series)
+    #                 plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+    #             if show_figs:
+    #                 plt.show()
+    #         elif len(roi_mask_bool.shape)==4:
+    #             for slice in range(roi_mask_bool.shape[3]):
+    #                 if np.any(roi_mask_bool[roi_ind,:,:,slice]):
+    #                     im = plot_tools.overlayImage(roi_data[sn,ch]['roi_image'][:,:,slice], roi_mask_bool[:,:,:,slice], alpha=0.5, colors=None)
+    #                     fig = plt.subplot(1,1,1)
+    #                     fig.imshow(im)
+    #                     if save_figs:
+    #                         fig_name = fig_name_string + '_roi_{}_series_{}_slice_{}_'.format(roi_ind,current_series,slice)
+    #                         plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+    #                     if show_figs:
+    #                         plt.show()
 
 
     # plot 1: mean responses to search stimulus (series 1) - all rois plotted together
