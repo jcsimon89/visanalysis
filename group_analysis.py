@@ -10,7 +10,7 @@ from visanalysis.util import plot_tools
 import matplotlib.pyplot as plt
 import os
 
-experiment_file_directory = '/Users/mhturner/GitHub/visanalysis/example_data/responses/Bruker'
+experiment_file_directory = ''
 experiment_file_name = '2021-07-07'
 series_number = 1
 
