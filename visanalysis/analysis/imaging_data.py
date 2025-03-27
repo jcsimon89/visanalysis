@@ -319,7 +319,7 @@ class ImagingDataObject:
             frame_offsets[frame_ind] = frame_times[0, frame_ind] - frame_times[0, 0]
         return frame_offsets
 
-    def getStimulusTiming(self, plot_trace_flag=False):
+    def getStimulusTiming(self, plot_trace_flag=True):
         """
         Returns stimulus timing information based on photodiode voltage trace from frame tracker signal.
 
