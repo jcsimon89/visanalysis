@@ -191,7 +191,7 @@ if __name__ == '__main__':
     
     ## start response extraction
 
-    for current_series in series_num: #loop through all series
+    for series_ind, current_series in enumerate(series_num): #loop through all series
         current_series = int(current_series) # methods expect series number to be datatype int
         sn = 'sn' + str(current_series)
 
@@ -208,12 +208,16 @@ if __name__ == '__main__':
             ch = 'ch' + str(current_channel)
             response_set_name = 'mask_' + ch
 
-            #derive image file name and path
+            #derive image file name and path, (assuming we only do background subtraction on channel 2 (green))
 
-            if current_channel == 2:  # assuming we only do background subtraction on channel 2 (green)
+            if current_channel == 2 and series_ind == 0: 
                 image_file_name = 'channel_' + str(current_channel) + '_moco_bg_func.nii' 
-            else:
-                image_file_name = 'channel_' + str(current_channel) + '_moco_func.nii' 
+            elif current_channel == 2 and series_ind > 0:
+                image_file_name = 'channel_' + str(current_channel) + '_moco_bg_func_reg.nii'
+            elif current_channel !=2 and series_ind == 0:
+                image_file_name = 'channel_' + str(current_channel) + '_moco_func.nii'
+            elif current_channel !=2 and series_ind > 0:
+                image_file_name = 'channel_' + str(current_channel) + '_moco_func_reg.nii' 
 
 
             image_relative_directory = 'func' + str(int(current_series)-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1

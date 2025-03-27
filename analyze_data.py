@@ -211,6 +211,7 @@ if __name__ == '__main__':
 
     ## convert mask format to bool
     roi_mask_bool = bruker.convertMaskToBool(roi_data[sn,ch]['roi_mask'])
+    print('roi_mask_bool shape: ' + repr(roi_mask_bool.shape))
 
 
     """ 
@@ -302,6 +303,7 @@ if __name__ == '__main__':
             fig.imshow(im)
             if save_figs:
                 plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+                fig_name = fig_name_string + '_{}_rois_series_{}_'.format(tag,current_series)
             if show_figs:
                 plt.show()
         elif len(roi_mask_bool.shape)==4:
@@ -310,7 +312,7 @@ if __name__ == '__main__':
                 fig = plt.subplot(1,1,1)
                 fig.imshow(im)
                 if save_figs:
-                    fig_name = fig_name_string + '_{}_rois_series_{}_'.format(tag,current_series)
+                    fig_name = fig_name_string + '_{}_rois_series_{}_slice_{}_'.format(tag,current_series,slice)
                     plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
                 if show_figs:
                     plt.show()
