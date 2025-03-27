@@ -355,6 +355,8 @@ class ImagingDataObject:
             frame_monitor = signal.filtfilt(b, a, frame_monitor)
 
             # shift & normalize so frame monitor trace lives on [0 1]
+            if np.max(frame_monitor) < 0: # if photodiode reading is negative, switch sign
+                frame_monitor = -1*frame_monitor
             frame_monitor = frame_monitor - np.min(frame_monitor)
             frame_monitor = frame_monitor / np.max(frame_monitor)
 
