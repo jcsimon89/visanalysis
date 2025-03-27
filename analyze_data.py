@@ -118,9 +118,23 @@ if __name__ == '__main__':
                                         int(series_num[0]),
                                         quiet=False)
     
+
     # get fly metadata for later
     fly_metadata = ID.getSubjectMetadata()
     print('fly_metadata: ' + repr(fly_metadata))
+
+    # IMPORTANT: SET TIMING_CHANNEL_IND (visanalysis assumes 0 and will default to first photodiode (ie fly left) of not set!)
+    prep = fly_metadata['prep']
+    
+    if prep == 'fly right optic lobe': #TODO: add condition to check if there are multiple PD channels?  Currently assuming there are two PD recordings
+        timing_channel_ind = 1
+    elif prep == 'fly left optic lobe':
+        timing_channel_ind = 0
+    else:
+        'could not find photodiode channel based on prep, defaulting to 0'
+        timing_channel_ind = 0
+    
+    print('photodiode timing_channel_ind: ' + repr(timing_channel_ind))
 
     # initialize data structures (dicts) to store data for all series and channels
     roi_data = {}
@@ -146,7 +160,7 @@ if __name__ == '__main__':
                                     current_series)
         
         ID = plug.ImagingDataObject
-
+        ID.timing_channel_ind = timing_channel_ind # IMPORTANT: set timing channel index for photodiode
         ## PARAMETERS & METADATA
 
         # volume_frame_offsets: dict (key = sn)
