@@ -181,7 +181,11 @@ if __name__ == '__main__':
             #roi_data: dict (key = sn,ch)
             #of dicts (key = roi_response/roi_image/roi_mask/epoch_response/time_vector)
             #NOTE:roi_response is a list where each entry is a roi
-            roi_data[sn,ch] = ID.getRoiResponses(response_set_name, roi_prefix='aligned') 
+            roi_data[sn,ch] = ID.getRoiResponses(response_set_name, roi_prefix='aligned')
+
+            # check stimulus timing from photodiode trace
+            
+
             #print('roi_data keys: ' + repr(roi_data.keys()))
             #print('roi_data[sn,ch] keys: ' + repr(roi_data[sn,ch].keys()))
             print('current series, channel: ' + str(sn) + ', ' + str(ch))
