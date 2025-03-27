@@ -355,8 +355,6 @@ class ImagingDataObject:
             frame_monitor = signal.filtfilt(b, a, frame_monitor)
 
             # shift & normalize so frame monitor trace lives on [0 1]
-            if np.max(frame_monitor) < 0: # if photodiode reading is negative, switch sign
-                frame_monitor = -1*frame_monitor
             frame_monitor = frame_monitor - np.min(frame_monitor)
             frame_monitor = frame_monitor / np.max(frame_monitor)
 
@@ -933,6 +931,11 @@ class ImagingDataObject:
         # Note response_matrix is padded by nan out to longest epoch length. Different epoch lengths may result in a jagged array with nans backfilled
         response_matrix = np.empty(shape=(no_regions, no_trials, max_epoch_frames), dtype=float)
         response_matrix[:] = np.nan
+
+        print('shape of response matrix = {}'.format(response_matrix.shape))
+        print('no_trials = {}'.format(no_trials))
+        print('no_regions = {}'.format(no_regions))
+        print('t_dim = {}'.format(t_dim))
        
         for idx in range(no_trials):
             current_trial_inds = get_image_inds(idx)
@@ -1043,6 +1046,11 @@ class ImagingDataObject:
 
         n_stimuli = len(unique_parameter_values)
         n_regions, n_trials, t_dim = epoch_response_matrix.shape
+
+        print('epoch_response_matrix shape = {}'.format(epoch_response_matrix.shape))
+        print('n_stimuli = {}'.format(n_stimuli))
+        print('n_trials = {}'.format(n_trials))
+        print('t_dim = {}'.format(t_dim))
 
         mean_response = np.ndarray(
             shape=(n_regions, n_stimuli, t_dim)
