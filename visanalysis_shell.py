@@ -37,7 +37,7 @@ import h5py
 
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
-experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS143_x_JS252/fly_001' #string to folder containing fly.hdf5 file
+experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS139_x_JS252/fly_002' #string to folder containing fly.hdf5 file
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
 # process_data
