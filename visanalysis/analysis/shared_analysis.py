@@ -59,6 +59,21 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, roi_pre
     n_timepoints = []
     n_roi_total = 0
     for exp_ind, ImagingData in enumerate(ImagingDataObjects):
+        fly_metadata = ImagingData.getSubjectMetadata()
+        print('fly_metadata: ' + repr(fly_metadata))
+
+        # IMPORTANT: SET TIMING_CHANNEL_IND (visanalysis assumes 0 and will default to first photodiode (ie fly left) of not set!)
+        prep = fly_metadata['prep']
+    
+        if prep == 'fly right optic lobe': #TODO: add condition to check if there are multiple PD channels?  Currently assuming there are two PD recordings
+            timing_channel_ind = 1
+        elif prep == 'fly left optic lobe':
+            timing_channel_ind = 0
+        else:
+            'could not find photodiode channel based on prep, defaulting to 0'
+            timing_channel_ind = 0
+        print('photodiode timing_channel_ind: ' + repr(timing_channel_ind))
+        ImagingData.timing_channel_ind = timing_channel_ind # IMPORTANT: set timing channel index for photodiode
         for ch_ind, ch_name in enumerate(ch_names):
             # get roi data
             roi_data[exp_ind,ch_ind] = ImagingData.getRoiResponses(ch_name, roi_prefix=roi_prefix)
@@ -102,6 +117,21 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, roi_pre
     #print('mean_response_interp.shape: ' + repr(mean_response_interp.shape))
 
     for exp_ind, ImagingData in enumerate(ImagingDataObjects):
+        fly_metadata = ImagingData.getSubjectMetadata()
+        print('fly_metadata: ' + repr(fly_metadata))
+
+        # IMPORTANT: SET TIMING_CHANNEL_IND (visanalysis assumes 0 and will default to first photodiode (ie fly left) of not set!)
+        prep = fly_metadata['prep']
+    
+        if prep == 'fly right optic lobe': #TODO: add condition to check if there are multiple PD channels?  Currently assuming there are two PD recordings
+            timing_channel_ind = 1
+        elif prep == 'fly left optic lobe':
+            timing_channel_ind = 0
+        else:
+            'could not find photodiode channel based on prep, defaulting to 0'
+            timing_channel_ind = 0
+        print('photodiode timing_channel_ind: ' + repr(timing_channel_ind))
+        ImagingData.timing_channel_ind = timing_channel_ind # IMPORTANT: set timing channel index for photodiode
         for ch_ind, ch_name in enumerate(ch_names):
             # interpolate
             #f = interp1d(roi_data[exp_ind,roi_ind]['time_vector'],roi_data[exp_ind,roi_ind]['epoch_response'],kind='linear',axis=2)
