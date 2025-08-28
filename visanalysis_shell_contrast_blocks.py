@@ -70,7 +70,7 @@ os.system('python ' + process_data_path
 
 
 tag = 'raw' #string "raw" or "final"
-analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
+analyze_data_path = str(os.path.join(base_path,'analyze_data_contrast_blocks.py'))
 
 os.system('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
@@ -96,7 +96,7 @@ os.system('python ' + select_rois_path
 
 
 tag = 'final' #string "raw" or "final"
-analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
+analyze_data_path = str(os.path.join(base_path,'analyze_data_contrast_blocks.py'))
 
 os.system('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory

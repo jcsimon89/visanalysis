@@ -28,10 +28,12 @@ if __name__ == '__main__':
     parser.add_argument("--experiment_file_directory", nargs="?", help="Folder pointing to hdf5")
     parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
     parser.add_argument("--save", nargs="?", help="True/False")
+    parser.add_argument("--roi_tag", nargs="?", help="Good/Final/etc. label")
     args = parser.parse_args()
 
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
+    roi_tag = args.roi_tag
 
     if args.save == 'True':
         save = True
@@ -45,7 +47,7 @@ if __name__ == '__main__':
     # hardcoded file names
     experiment_file_name = 'fly.hdf5'
     json_file_name = 'fly.json'
-    final_rois_json_file_name = 'final_rois.json'
+    rois_json_file_name = roi_tag + '_rois.json'
     response_set_name_prefix = 'mask_' #once channel is added, will be of form mask_ch1 (these are names saved from process_data.py)
     roi_prefix = 'aligned'
     final_hdf5_save_path = os.path.join(experiment_file_directory,'fly_final.hdf5') # save path
@@ -71,7 +73,7 @@ if __name__ == '__main__':
 
     # extract roi_ind_final from final_rois.json 
 
-    with open(pathlib.Path(experiment_file_directory, final_rois_json_file_name), 'r') as file:
+    with open(pathlib.Path(experiment_file_directory, rois_json_file_name), 'r') as file:
         roi_ind_final_json = json.load(file)
     roi_ind_final = roi_ind_final_json['roi_ind_final'] #list of integers
     print('roi_ind_final: ' + repr(roi_ind_final))
