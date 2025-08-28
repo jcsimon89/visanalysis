@@ -37,7 +37,7 @@ import h5py
 
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
-experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS139_x_JS252/fly_002' #string to folder containing fly.hdf5 file
+experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS252/fly_012' #string to folder containing fly.hdf5 file
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
 # process_data
@@ -70,7 +70,7 @@ os.system('python ' + process_data_path
 
 
 tag = 'raw' #string "raw" or "final"
-analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
+analyze_data_path = str(os.path.join(base_path,'analyze_data_contrast_blocks.py'))
 
 os.system('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
@@ -95,7 +95,7 @@ os.system('python ' + select_final_rois_path
 
 
 tag = 'final' #string "raw" or "final"
-analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
+analyze_data_path = str(os.path.join(base_path,'analyze_data_contrast_blocks.py'))
 
 os.system('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory

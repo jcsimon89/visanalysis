@@ -117,21 +117,6 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, roi_pre
     #print('mean_response_interp.shape: ' + repr(mean_response_interp.shape))
 
     for exp_ind, ImagingData in enumerate(ImagingDataObjects):
-        fly_metadata = ImagingData.getSubjectMetadata()
-        print('fly_metadata: ' + repr(fly_metadata))
-
-        # IMPORTANT: SET TIMING_CHANNEL_IND (visanalysis assumes 0 and will default to first photodiode (ie fly left) of not set!)
-        prep = fly_metadata['prep']
-    
-        if prep == 'fly right optic lobe': #TODO: add condition to check if there are multiple PD channels?  Currently assuming there are two PD recordings
-            timing_channel_ind = 1
-        elif prep == 'fly left optic lobe':
-            timing_channel_ind = 0
-        else:
-            'could not find photodiode channel based on prep, defaulting to 0'
-            timing_channel_ind = 0
-        print('photodiode timing_channel_ind: ' + repr(timing_channel_ind))
-        ImagingData.timing_channel_ind = timing_channel_ind # IMPORTANT: set timing channel index for photodiode
         for ch_ind, ch_name in enumerate(ch_names):
             # interpolate
             #f = interp1d(roi_data[exp_ind,roi_ind]['time_vector'],roi_data[exp_ind,roi_ind]['epoch_response'],kind='linear',axis=2)
@@ -194,6 +179,23 @@ def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, conditio
     n_roi_total = 0
     for cond_ind, Condition in enumerate(ImagingDataObjects):
         for exp_ind, ImagingData in enumerate(ImagingDataObjects[cond_ind]):
+            
+            fly_metadata = ImagingData.getSubjectMetadata()
+            print('fly_metadata: ' + repr(fly_metadata))
+
+            # IMPORTANT: SET TIMING_CHANNEL_IND (visanalysis assumes 0 and will default to first photodiode (ie fly left) of not set!)
+            prep = fly_metadata['prep']
+        
+            if prep == 'fly right optic lobe': #TODO: add condition to check if there are multiple PD channels?  Currently assuming there are two PD recordings
+                timing_channel_ind = 1
+            elif prep == 'fly left optic lobe':
+                timing_channel_ind = 0
+            else:
+                'could not find photodiode channel based on prep, defaulting to 0'
+                timing_channel_ind = 0
+            print('photodiode timing_channel_ind: ' + repr(timing_channel_ind))
+            ImagingData.timing_channel_ind = timing_channel_ind # IMPORTANT: set timing channel index for photodiode
+
             for ch_ind, ch_name in enumerate(ch_names):
                 # get roi data
                 roi_data[cond_ind,exp_ind,ch_ind] = ImagingData.getRoiResponses(ch_name, roi_prefix=roi_prefix)
@@ -241,6 +243,9 @@ def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, conditio
     for cond_ind, Condition in enumerate(ImagingDataObjects):
         for exp_ind, ImagingData in enumerate(ImagingDataObjects[cond_ind]):
             for ch_ind, ch_name in enumerate(ch_names):
+                print('cond_ind: {}'.format(cond_ind))
+                print('exp_ind: {}'.format(exp_ind))
+                print('ch_ind: {}'.format(ch_ind))
                 # interpolate
                 #f = interp1d(roi_data[exp_ind,roi_ind]['time_vector'],roi_data[exp_ind,roi_ind]['epoch_response'],kind='linear',axis=2)
                 f = interp1d(roi_data[cond_ind,exp_ind,ch_ind]['time_vector'],mean_response[cond_ind,exp_ind,ch_ind][:,:,:],kind='linear',axis=2,bounds_error = False)
@@ -254,9 +259,10 @@ def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, conditio
                     # first assignment
                     mean_response_interp[cond_ind] = response_interp_temp
             else:
-                    mean_response_interp[cond_ind] = np.append(mean_response_interp,response_interp_temp, axis=0)
+                    mean_response_interp[cond_ind] = np.append(mean_response_interp[cond_ind],response_interp_temp, axis=0)
 
-    print('mean_response_interp.shape: ' + repr(mean_response_interp.shape))
+    print('cnt mean_response_interp.shape: ' + repr(mean_response_interp[0].shape))
+    print('test mean_response_interp.shape: ' + repr(mean_response_interp[1].shape))
     fh1, ax1 = plt.subplots(len(ch_names), len(unique_parameter_values), figsize=(10, 10*9/16),constrained_layout = True)
     for cond_ind, Condition in enumerate(ImagingDataObjects):
         for u_ind, u_value in enumerate(unique_parameter_values):
@@ -271,10 +277,13 @@ def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, conditio
                 #query = {condition: u_value}
                 #trials = filterTrials(roi_data.get('epoch_response'), ImagingData, query)
                 y = np.mean(mean_response_interp[cond_ind][:,u_ind,:,ch_ind],axis=0).T
+                print('y.shape: ' + repr(y.shape))
                 error = scipy.stats.sem(mean_response_interp[cond_ind][:,u_ind,:,ch_ind],axis=0).T
+                print('error.shape: ' + repr(error.shape))
+                print('time_vector.shape: ' + repr(time_vector.shape))
                 fill_color = ['c','y']
                 ax1[ch_ind,u_ind].plot(time_vector,y, color = 'k')
-                ax1[ch_ind,u_ind].fill_between(time_vector, y-error, y+error, fill_color[cond_ind], alpha = 0.3) #, linestyle='-', color=ImagingData.colors[0])
+                ax1[ch_ind,u_ind].fill_between(time_vector, y-error, y+error, color=fill_color[cond_ind], alpha = 0.3) #, linestyle='-', color=ImagingData.colors[0])
                 ax1[ch_ind,u_ind].set_title('{}, Intensity = {}, {}ms Flash'.format(ch_label,u_value,1000*run_parameters['stim_time']))
                 ax1[ch_ind, u_ind].set_ylabel('Response (dF/F)')
                 ax1[ch_ind, u_ind].set_xlabel('Time (s)')

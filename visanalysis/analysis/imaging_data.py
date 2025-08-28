@@ -876,7 +876,7 @@ class ImagingDataObject:
 
         return roi_data
 
-    def getEpochResponseMatrix(self, region_response, dff=True):
+    def getEpochResponseMatrix(self, region_response, dff=False):
         """
         getEpochReponseMatrix(self, region_response, dff=True)
             Takes in long stack response traces and splits them up into each stimulus epoch

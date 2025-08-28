@@ -138,14 +138,14 @@ for series in short_flash_series_test:
     short_flash_IDs_test.append(imaging_data.ImagingDataObject(series['file_name'], series['series'], quiet=True))
 
 search_IDs = {}
-search_IDs['cnt'] = search_IDs_cnt
-search_IDs['test'] = search_IDs_test
+search_IDs[0] = search_IDs_cnt
+search_IDs[1] = search_IDs_test
 long_flash_IDs = {}
-long_flash_IDs['cnt'] = long_flash_IDs_cnt
-long_flash_IDs['test'] = long_flash_IDs_test
+long_flash_IDs[0] = long_flash_IDs_cnt
+long_flash_IDs[1] = long_flash_IDs_test
 short_flash_IDs = {}
-short_flash_IDs['cnt'] = short_flash_IDs_cnt
-short_flash_IDs['test'] = short_flash_IDs_test
+short_flash_IDs[0] = short_flash_IDs_cnt
+short_flash_IDs[1] = short_flash_IDs_test
 
 
 shared_analysis.plotAllResponsesByConditionComparison(search_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', roi_prefix='aligned')
