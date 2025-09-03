@@ -28,12 +28,14 @@ if __name__ == '__main__':
     parser.add_argument("--experiment_file_directory", nargs="?", help="Folder pointing to hdf5")
     parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
     parser.add_argument("--save", nargs="?", help="True/False")
-    parser.add_argument("--roi_tag", nargs="?", help="Good/Final/etc. label")
+    parser.add_argument("--input_tag", nargs="?", help="Good/Final/etc. label for input data (can be empty string)")
+    parser.add_argument("--output_tag", nargs="?", help="Good/Final/etc. label for output data")
     args = parser.parse_args()
 
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
-    roi_tag = args.roi_tag
+    input_tag = args.input_tag
+    output_tag = args.output_tag
 
     if args.save == 'True':
         save = True
@@ -44,15 +46,20 @@ if __name__ == '__main__':
         print('not able to interperet save flag, must be "True" or "False", default = False')
     print('save: ' + str(save))
 
-    # hardcoded file names
-    experiment_file_name = 'fly.hdf5'
+    # file names
     json_file_name = 'fly.json'
-    rois_json_file_name = roi_tag + '_rois.json'
+    
+    if input_tag == '':
+        experiment_file_name = 'fly.hdf5'
+    else:
+        experiment_file_name = 'fly_' + input_tag + '.hdf5'
+
+    rois_json_file_name = output_tag + '_rois.json'
     response_set_name_prefix = 'mask_' #once channel is added, will be of form mask_ch1 (these are names saved from process_data.py)
     roi_prefix = 'aligned'
-    final_hdf5_save_path = os.path.join(experiment_file_directory,'fly_final.hdf5') # save path
+    hdf5_save_path = os.path.join(experiment_file_directory,'fly_' + output_tag + '.hdf5') # save path
     if save:
-        print('final_hdf5_save_path: ' + final_hdf5_save_path)
+        print('hdf5_save_path: ' + hdf5_save_path)
 
     experiment_file_path = os.path.join(experiment_file_directory,experiment_file_name)
 
@@ -180,7 +187,7 @@ if __name__ == '__main__':
 
     if save:
         with h5py.File(experiment_file_path, 'r') as h5r:
-            with h5py.File(final_hdf5_save_path, 'w') as h5w:
+            with h5py.File(hdf5_save_path, 'w') as h5w:
                 for obj in h5r.keys():        
                     h5r.copy(obj, h5w)
                 for current_series in series_num: #loop through all series

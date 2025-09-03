@@ -81,15 +81,16 @@ os.system('python ' + analyze_data_path
 
 
 #%% SELECT_FINAL_ROIS
-
-roi_tag = 'final'
+input_tag = ''
+output_tag = 'final'
 select_rois_path = str(os.path.join(base_path,'select_rois.py'))
 
 os.system('python ' + select_rois_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --save ' + save_hdf5
-                + ' --roi_tag' + roi_tag)
+                + ' --input_tag' + input_tag
+                + ' --output_tag' + output_tag)
 
 
 #%% ANALYZE_DATA FINAL
