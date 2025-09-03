@@ -142,6 +142,9 @@ if __name__ == '__main__':
     run_parameters = {}
     epoch_parameters = {}
     acquisition_metadata = {}
+    unique_intensity_values = {}
+    unique_center_index_values = {}
+    unique_radius_values = {}
     unique_parameter_values = {}
     mean_response = {}
     sem_response = {}
@@ -204,14 +207,20 @@ if __name__ == '__main__':
             #print('roi_data[sn,ch] keys: ' + repr(roi_data[sn,ch].keys()))
             print('current series, channel: ' + str(sn) + ', ' + str(ch))
             if tag == 'raw':
-                unique_parameter_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')
+                unique_intensity_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')
             elif tag == 'good':
                 #TODO:
                 # extract data for by intensity, center location, radius
+                unique_intensity_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')
+                unique_radius_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='radius')
+                unique_center_index_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='center_index')
                 unique_parameter_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key=['intensity','center_index','radius'])
             elif tag == 'final':
                 #TODO:
                 # extract data for by intensity, center location, radius
+                unique_intensity_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')
+                unique_radius_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='radius')
+                unique_center_index_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='center_index')
                 unique_parameter_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key=['intensity','center_index','radius'])
 
             # unique_parameter_values: dict (key = sn) of lists of each unique value of parameter_key (?)
@@ -370,11 +379,11 @@ if __name__ == '__main__':
     sn = search_series
     fig_name = 'search_mean_response_all_{}_rois'.format(tag)
     fig_format = '.pdf'
-    fh, ax = plt.subplots(len(func_channels_num), len(unique_parameter_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
     #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
     for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
         ch = 'ch' + current_channel
-        for u_ind, up in enumerate(unique_parameter_values[sn]):
+        for u_ind, up in enumerate(unique_intensity_values[sn]):
             ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
             ax[ch_ind, u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
             ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
@@ -398,11 +407,11 @@ if __name__ == '__main__':
     fig_format = '.pdf'
     #[plot_tools.cleanAxes(x) for x in ax.ravel()]
     for roi_ind in range(n_roi):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_parameter_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
         #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
         for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
             ch = 'ch' + current_channel
-            for u_ind, up in enumerate(unique_parameter_values[sn]):
+            for u_ind, up in enumerate(unique_intensity_values[sn]):
                 ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
                 ax[ch_ind, u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
                 ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
@@ -468,26 +477,38 @@ if __name__ == '__main__':
     plt.close()
     
 
-    if tag == 'good':
+    if tag == 'good' or tag == 'final':
         # TODO: 
         # plot individual roi data for smallest radius circle at each center location (to pick correct center location)
 
         sn = mapping_series
         fig_format = '.pdf'
-        fig_name_string = 'mean_responses_center_index'
+        fig_name_string = 'mean_responses_by_center_index'
 
         for roi_ind in range(n_roi):
-            fh, ax = plt.subplots(len(func_channels_num), len(unique_parameter_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+
+            fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
             # plot response for all center locations on same axes for each intensity, channel
+
+            min_radius = min(unique_parameter_values[sn], key=lambda x: x[2])[2] # smallest radius
+
             for ch_ind, current_channel in enumerate(func_channels_num):
                 ch = 'ch' + current_channel
-                for u_ind, up in enumerate(unique_parameter_values[sn]):
-                    ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
-                    ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
-                    ax[ch_ind, u_ind].set_xlabel('Time (s)')
-                    ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
-                    ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
-            plt.suptitle('Mean responses, {} Flash, {} roi {}'.format(fig_stim_time,tag,roi_ind))
+                for intensity_ind, intensity in enumerate(unique_intensity_values[sn]):
+                    for u_ind, up in enumerate(unique_parameter_values[sn]):
+                        current_intensity = up[0]
+                        current_center_index = up[1]
+                        current_radius = up[2]
+                        if current_intensity == intensity:
+                            if current_radius == min_radius:
+                                ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
+                                ax[ch_ind, intensity_ind].legend('center index: {}'.format(current_center_index))
+                                ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
+                                ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
+                                ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
+
+                                ax[ch_ind, intensity_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+            plt.suptitle('Mean responses, {} roi {}, radius {}'.format(tag,roi_ind,min_radius))
 
             if save_figs:
                 fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
