@@ -503,8 +503,8 @@ if __name__ == '__main__':
                         current_radius = up[2]
                         if current_intensity == intensity:
                             if current_radius == min_radius:
-                                ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
-                                ax[ch_ind, intensity_ind].legend('center index: {}'.format(current_center_index))
+                                ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T, label='center index: {}'.format(current_center_index))
+                                ax[ch_ind, intensity_ind].legend(loc='upper right')
                                 ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
                                 ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
                                 ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
