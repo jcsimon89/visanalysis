@@ -98,8 +98,8 @@ os.system('python ' + select_rois_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --save ' + save_hdf5
-                + ' --input_tag' + input_tag
-                + ' --output_tag' + output_tag)
+                + ' --input_tag ' + input_tag
+                + ' --output_tag ' + output_tag)
 
 
 #%% ANALYZE_DATA GOOD
@@ -124,8 +124,8 @@ os.system('python ' + select_rois_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --save ' + save_hdf5
-                + ' --input_tag' + input_tag
-                + ' --output_tag' + output_tag)
+                + ' --input_tag ' + input_tag
+                + ' --output_tag ' + output_tag)
 
 
 #%% ANALYZE_DATA FINAL
