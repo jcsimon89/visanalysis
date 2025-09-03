@@ -2,22 +2,32 @@
 visanalysis shell script for running:
 1. process_data.py
 2. analyze_data.py (raw)
-3. select_final_rois.py
-4. analyze_data.py (final)
+3. select_good_rois.py
+4. analyze_data.py (good)
+5. select_center.py
+6. analyze_data.py (final)
 
+
+
+Experiment description:
+series 1: search stimulus do identify rois that are looking at the right part of the screen
+series 2: rf mapping series where center location and circle radius are varied
+
+Analysis workflow:
+1. process data
+2. analyze search stim data and identify good rois
+3. select correct center location for each roi (if there is one, toss rois where this is not true)
+4. analyze data for each roi at correct center location
+
+using
 https://github.com/ClandininLab/visanalysis
-mhturner@stanford.edu
+mhturner@stanford.edu, modified by jcsimon@stanford.edu
 """
 #TODO: 
-# - pass roi_mask, roi_image to fly_final.hdf5 in select_final_rois - DONE
-# - analyze_data final - DONE
-# - save single frame pdfs and pngs
-# - show stimulus times (shaded)
-# - add plots: all roi plot for flash series - DONE
 # - add plots: all_roi/individual roi single page summary pdf (from single panels)
-# - add plots: roi image
 # - SHARED_ANALYSIS.PY!!!
 # - future: powerpoint slides, standardize plotting tools in analyze_data, add fano factor to gui
+
 
 #%% INITIALIZE ENVIRONMENT
 
@@ -79,24 +89,50 @@ os.system('python ' + analyze_data_path
                 + ' --save_figs ' + save_figs
                 + ' --tag ' + tag)
 
-
-#%% SELECT_FINAL_ROIS
-
-roi_tag = 'final'
+#%% SELECT_GOOD_ROIS
+input_tag = ''
+output_tag = 'good'
 select_rois_path = str(os.path.join(base_path,'select_rois.py'))
 
 os.system('python ' + select_rois_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --save ' + save_hdf5
-                + ' --roi_tag' + roi_tag)
+                + ' --input_tag' + input_tag
+                + ' --output_tag' + output_tag)
+
+
+#%% ANALYZE_DATA GOOD
+
+
+tag = 'good' #string "raw","good","final"
+analyze_data_path = str(os.path.join(base_path,'analyze_data_RF_mapping.py'))
+
+os.system('python ' + analyze_data_path
+                + ' --experiment_file_directory ' + experiment_file_directory
+                + ' --rig ' + rig
+                + ' --show_figs ' + show_figs
+                + ' --save_figs ' + save_figs
+                + ' --tag ' + tag)
+
+#%% SELECT_FINAL_ROIS
+input_tag = 'good'
+output_tag = 'final'
+select_centers_path = str(os.path.join(base_path,'select_centers.py'))
+
+os.system('python ' + select_rois_path
+                + ' --experiment_file_directory ' + experiment_file_directory
+                + ' --rig ' + rig
+                + ' --save ' + save_hdf5
+                + ' --input_tag' + input_tag
+                + ' --output_tag' + output_tag)
 
 
 #%% ANALYZE_DATA FINAL
 
 
 tag = 'final' #string "raw" or "final"
-analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
+analyze_data_path = str(os.path.join(base_path,'analyze_data_RF_mapping.py'))
 
 os.system('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
