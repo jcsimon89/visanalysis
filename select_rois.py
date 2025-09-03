@@ -34,8 +34,14 @@ if __name__ == '__main__':
 
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
-    input_tag = args.input_tag
+    
+    if args.input_tag is None:
+        input_tag = ''
+    else:
+        input_tag = args.input_tag
+        
     output_tag = args.output_tag
+    print('input_tag:' + input_tag)
 
     if args.save == 'True':
         save = True
