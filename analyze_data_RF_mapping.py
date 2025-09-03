@@ -68,7 +68,7 @@ if __name__ == '__main__':
         experiment_file_name = 'fly.hdf5'
     else:
         experiment_file_name = 'fly_' + tag + '.hdf5'
-        
+
     json_file_name = 'fly.json'
     response_set_name_prefix = 'mask_' #once channel is added, will be of form mask_ch1 (these are names saved from process_data.py)
 
@@ -207,24 +207,23 @@ if __name__ == '__main__':
             #print('roi_data keys: ' + repr(roi_data.keys()))
             #print('roi_data[sn,ch] keys: ' + repr(roi_data[sn,ch].keys()))
             print('current series, channel: ' + str(sn) + ', ' + str(ch))
-            if tag == 'raw':
+            if sn == 'sn' + series_num[0]:
                 unique_intensity_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')
-            elif tag == 'good':
-                #TODO:
-                # extract data for by intensity, center location, radius
-                unique_intensity_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')
-                unique_radius_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='radius')
-                unique_center_index_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='center_index')
-                unique_parameter_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key=['intensity','center_index','radius'])
-            elif tag == 'final':
-                #TODO:
-                # extract data for by intensity, center location, radius
-                unique_intensity_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')
-                unique_radius_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='radius')
-                unique_center_index_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='center_index')
+            
+            elif sn == 'sn' + series_num[1]:
+                # extract unique values of all parameters
+                unique_intensity_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='intensity')[0]
+                unique_radius_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='radius')[0]
+                unique_center_index_values[sn] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='center_index')[0]
+                # extract data by intensity, center location, radius
                 unique_parameter_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key=['intensity','center_index','radius'])
             
+            
             print('unique_parameter_values: ' + repr(unique_parameter_values))
+            print('unique_intensity_values: ' + repr(unique_intensity_values))
+            print('unique_center_index_values: ' + repr(unique_center_index_values))
+            print('unique_radius_values: ' + repr(unique_radius_values))
+            
 
             # unique_parameter_values: dict (key = sn) of lists of each unique value of parameter_key (?)
             # mean_response: dict (key = sn,ch) of numpy arrays (nroi x unique values of parameter_key x time)
