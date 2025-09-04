@@ -199,12 +199,6 @@ if __name__ == '__main__':
                 
                 for obj in h5r.keys():        
                     h5r.copy(obj, h5w)
-                
-                for roi_ind in roi_ind_final:
-                    center_index = roi_centers[roi_ind_final.index(roi_ind)]
-
-                    for epoch in h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + '/epochs']:
-                                # add epoch parameter on_center (0 or 1) if center_index is roi_center
 
                 for current_series in series_num: #loop through all series
                     sn = 'sn' + current_series
