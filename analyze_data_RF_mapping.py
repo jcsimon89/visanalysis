@@ -321,8 +321,9 @@ if __name__ == '__main__':
         #extract center locations for each roi
         with open(pathlib.Path(experiment_file_directory, roi_centers_json_file_name), 'r') as file:
             roi_centers_final_json = json.load(file)
-        roi_centers =  [item[1] for item in roi_centers_final_json['roi_centers']] # keep second elements of list of tuples (roi_ind, center_ind)
-        print('roi_centers (roi_ind, center_ind): ' + repr(roi_centers))
+        roi_centers = [int(x.split(',')[-1]) for x in roi_centers_final_json['roi_centers']]
+         # keep second elements of list of tuples (roi_ind, center_ind)
+        print('roi_centers: ' + repr(roi_centers))
 
     # make raw fig save directory (if it doesn't exist)
     figs_folder_name = tag + '_roi_figs'
@@ -584,7 +585,7 @@ if __name__ == '__main__':
         # plot response for all radii on same axes at correct center location for each intensity, channel
 
         on_center_mean_response = np.empty([n_roi, len(func_channels_num), len(unique_intensity_values[sn]), len(unique_radius_values[sn]), mean_response[sn,'ch' + str(func_channels_num[0])].shape[2]]) # numpy arrays(roi x channel x intensity x radius x time)
-
+        on_center_sem_response = np.empty(on_center_mean_response.shape) # numpy array (roi x channel x intensity x radius x time)
         # aggregate on-center mean data for each roi
 
         for roi_ind in range(n_roi):
@@ -595,12 +596,15 @@ if __name__ == '__main__':
                 ch = 'ch' + current_channel
                 for u_ind, up in enumerate(unique_parameter_values[sn]):
                         current_intensity = up[0]
-                        intensity_ind = unique_intensity_values.index(current_intensity)
+                        intensity_ind = unique_intensity_values[sn].index(current_intensity)
                         current_center_index = up[1]
                         current_radius = up[2]
-                        radius_ind = unique_radius_values.index(current_radius)
+                        radius_ind = unique_radius_values[sn].index(current_radius)
                         if current_center_index == center_index:
                             on_center_mean_response[roi_ind, ch_ind, intensity_ind, radius_ind,:] = mean_response[sn,ch][roi_ind, u_ind, :]
+                            on_center_sem_response[roi_ind, ch_ind, intensity_ind, radius_ind,:] = sem_response[sn,ch][roi_ind, u_ind, :]
+
+        print('on_center_mean_response: ' + repr(on_center_mean_response.shape))
 
         # plot on-center mean responses
 
@@ -608,7 +612,7 @@ if __name__ == '__main__':
             ch = 'ch' + current_channel
             for intensity_ind, current_intensity in enumerate(unique_intensity_values[sn]):
                 for radius_ind, current_radius in enumerate(unique_radius_values[sn]):
-                    ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], on_center_mean_response[:, ch_ind, intensity_ind, radius_ind, :].T, label='radius: {}'.format(current_radius))
+                    ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], np.mean(on_center_mean_response[:, ch_ind, intensity_ind, radius_ind, :], axis=0).T, label='radius: {}'.format(current_radius))
                     ax[ch_ind, intensity_ind].legend(loc='upper right')
                     ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
                     ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
