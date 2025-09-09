@@ -48,7 +48,6 @@ attach_metadata = 'True' #string "True" or "False", default = "False"
 # analyze_data
 show_figs = 'False' #string "True" or "False", default = "False"
 save_figs = 'True' #string "True" or "False", default = "False"
-dff = 'pre' #string "pre", "mean", or "none", default = "pre"
 
 # select_final_rois
 save_hdf5 = 'True'#string "True" or "False", default = "False"
@@ -71,6 +70,8 @@ os.system('python ' + process_data_path
 
 
 tag = 'raw' #string "raw" or "final"
+dff = 'pre' #string "pre", "mean", or "none", default = "pre"
+
 analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
 
 os.system('python ' + analyze_data_path
@@ -99,6 +100,8 @@ os.system('python ' + select_rois_path
 
 
 tag = 'final' #string "raw" or "final"
+dff = 'mean' #string "pre", "mean", or "none", default = "pre"
+
 analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
 
 os.system('python ' + analyze_data_path
