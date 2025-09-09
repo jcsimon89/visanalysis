@@ -48,6 +48,7 @@ attach_metadata = 'True' #string "True" or "False", default = "False"
 # analyze_data
 show_figs = 'False' #string "True" or "False", default = "False"
 save_figs = 'True' #string "True" or "False", default = "False"
+dff = 'pre' #string "pre", "mean", or "none", default = "pre"
 
 # select_final_rois
 save_hdf5 = 'True'#string "True" or "False", default = "False"
@@ -77,7 +78,8 @@ os.system('python ' + analyze_data_path
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --dff ' + dff)
 
 
 #%% SELECT_FINAL_ROIS
@@ -104,6 +106,7 @@ os.system('python ' + analyze_data_path
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --dff ' + dff)
 # %%
 
