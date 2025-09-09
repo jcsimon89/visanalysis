@@ -60,7 +60,7 @@ if __name__ == '__main__':
     else:
         experiment_file_name = 'fly_' + input_tag + '.hdf5'
 
-    rois_json_file_name = output_tag + '_rois.json'
+    roi_centers_json_file_name = output_tag + '_roi_centers.json'
     response_set_name_prefix = 'mask_' #once channel is added, will be of form mask_ch1 (these are names saved from process_data.py)
     roi_prefix = 'aligned'
     hdf5_save_path = os.path.join(experiment_file_directory,'fly_' + output_tag + '.hdf5') # save path
@@ -83,13 +83,15 @@ if __name__ == '__main__':
     func_channels_num = [func_channels[i].split('_')[-1] for i in range(len(func_channels))] #datatype = list of strings, but individual channel numbers will be converted to int before using methods
     print('func_channels = ' + str(func_channels))
     print('func_channels_num = ' + str(func_channels_num))
+    
+    #extract center locations for each roi from final_roi_centers.json
 
-    # extract roi_ind_final from final_rois.json 
-
-    with open(pathlib.Path(experiment_file_directory, rois_json_file_name), 'r') as file:
-        roi_ind_final_json = json.load(file)
-    roi_ind_final = roi_ind_final_json['roi_ind_final'] #list of integers
-    print('roi_ind_final: ' + repr(roi_ind_final))
+    with open(pathlib.Path(experiment_file_directory, roi_centers_json_file_name), 'r') as file:
+        roi_centers_final_json = json.load(file)
+    roi_centers = [int(x.split(',')[-1]) for x in roi_centers_final_json['roi_centers']]
+    roi_ind_final = [int(x.split(',')[0]) for x in roi_centers_final_json['roi_centers']]
+        # keep second elements of list of tuples (roi_ind, center_ind)
+    print('roi_centers: ' + repr(roi_centers))
 
     # instatiate correct data object plugin based on rig
 
@@ -194,10 +196,13 @@ if __name__ == '__main__':
     if save:
         with h5py.File(experiment_file_path, 'r') as h5r:
             with h5py.File(hdf5_save_path, 'w') as h5w:
+                
                 for obj in h5r.keys():        
                     h5r.copy(obj, h5w)
+
                 for current_series in series_num: #loop through all series
                     sn = 'sn' + current_series
+                    
                     for current_channel in func_channels_num: #loop through channels
                         ch = 'ch' + current_channel
                         del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
@@ -211,6 +216,7 @@ if __name__ == '__main__':
                         h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
                         '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask',data=roi_data_final[sn,ch]['roi_mask'])
                         h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
+                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])  
+                            
         
         h5r.close()
