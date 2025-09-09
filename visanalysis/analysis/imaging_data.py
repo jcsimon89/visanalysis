@@ -787,6 +787,7 @@ class ImagingDataObject:
         background_subtraction=False,
         roi_prefix="rois",
         return_erm=True,
+        dff='pre'
     ):
         """
         Get responses for indicated roi
@@ -797,6 +798,10 @@ class ImagingDataObject:
             -roi_prefix: 'rois' or 'aligned'
                     'rois' used for hand-drawn ROIs, with path objects
                     'aligned' used for mask-generated, no path objects for drawing
+            -dff: pass dff method to getEpochResponseMatrix
+                'pre' (default): dF/F relative to pre_time baseline
+                'none': no dF/F conversion
+                'mean': dF/F relative to mean of entire epoch trace
 
         Returns:
             roi_data: dict, keys:
@@ -833,7 +838,8 @@ class ImagingDataObject:
 
         if return_erm:
             time_vector, response_matrix = self.getEpochResponseMatrix(
-                np.vstack(roi_data.get("roi_response"))
+                np.vstack(roi_data.get("roi_response")),
+                dff=dff
             )
             roi_data["epoch_response"] = response_matrix
             roi_data["time_vector"] = time_vector
@@ -876,13 +882,18 @@ class ImagingDataObject:
 
         return roi_data
 
-    def getEpochResponseMatrix(self, region_response, dff=True):
+    def getEpochResponseMatrix(self, region_response, dff='pre'):
         """
         getEpochReponseMatrix(self, region_response, dff=True)
             Takes in long stack response traces and splits them up into each stimulus epoch
             Params:
                 region_response: Matrix of region/voxel responses. Shape = (n regions, time)
                 dff: (Bool) convert from raw intensity value to dF/F based on mean of pre_time
+
+                dff: 'pre' (default): dF/F relative to pre_time baseline
+                     'none': no dF/F conversion
+                     'mean': dF/F relative to mean of entire trace
+
 
             Returns:
                 time_vector (1d array): 1d array, time values for response_matrix trace with longest epoch time (sec)
@@ -900,12 +911,17 @@ class ImagingDataObject:
             )[0]
             return image_inds
 
-        def get_dff(epoch_raw_resp, epoch_index):
-            '''For a given [epoch_raw_response], and [epoch_index], return df/f for that epoch, using pre_time'''
-            # baseline is private to each roi
-            baseline = np.mean(epoch_raw_resp[:, 0:pre_frames[epoch_index]], axis=1, keepdims=True)
-            with warnings.catch_warnings():  # Warning to catch divide by zero or nan. Will return nan or inf
-                dff_resp = (epoch_raw_resp - baseline) / baseline
+        def get_dff(epoch_raw_resp, epoch_index, dff):
+            '''For a given [epoch_raw_response], and [epoch_index], return df/f for that epoch, using specified dff method'''
+            if dff == 'pre':
+                # baseline is private to each roi
+                baseline = np.mean(epoch_raw_resp[:, 0:pre_frames[epoch_index]], axis=1, keepdims=True)
+                with warnings.catch_warnings():  # Warning to catch divide by zero or nan. Will return nan or inf
+                    dff_resp = (epoch_raw_resp - baseline) / baseline
+            elif dff == 'mean':
+                baseline = np.mean(epoch_raw_resp, axis=1, keepdims=True)
+                with warnings.catch_warnings():
+                    dff_resp = (epoch_raw_resp - baseline) / baseline
             return dff_resp
 
         no_regions, t_dim = region_response.shape
@@ -949,8 +965,8 @@ class ImagingDataObject:
 
             new_epoch_response = region_response[:, current_trial_inds]
 
-            if dff:
-                new_epoch_response = get_dff(new_epoch_response, idx)
+            if dff != 'none':
+                new_epoch_response = get_dff(new_epoch_response, idx, dff=dff)
                 
             response_matrix[:, idx, :epoch_frames[idx]] = new_epoch_response[:, :epoch_frames[idx]]                
 
