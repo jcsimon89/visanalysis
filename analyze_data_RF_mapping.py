@@ -584,9 +584,10 @@ if __name__ == '__main__':
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
         # plot response for all radii on same axes at correct center location for each intensity, channel
 
+        # extract on-center data for all rois
+
         on_center_mean_response = np.empty([n_roi, len(func_channels_num), len(unique_intensity_values[sn]), len(unique_radius_values[sn]), mean_response[sn,'ch' + str(func_channels_num[0])].shape[2]]) # numpy arrays(roi x channel x intensity x radius x time)
         on_center_sem_response = np.empty(on_center_mean_response.shape) # numpy array (roi x channel x intensity x radius x time)
-        # aggregate on-center mean data for each roi
 
         for roi_ind in range(n_roi):
 
