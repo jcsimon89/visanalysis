@@ -35,10 +35,17 @@ if __name__ == '__main__':
     parser.add_argument("--show_figs", nargs="?", help="True/False")
     parser.add_argument("--save_figs", nargs="?", help="True/False")
     parser.add_argument("--tag", nargs="?", help="raw/final")
+    parser.add_argument("--dff", nargs="?", help="dff method ('pre', 'mean', 'none')")
     args = parser.parse_args()
 
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
+
+    if args.dff == 'pre' or args.dff == 'mean' or args.dff == 'none':
+        dff = args.dff
+    else:
+        dff = 'pre'
+        print('not able to interperet dff flag, must be "pre", "mean", or "none", default = "pre"')
 
     if args.show_figs == 'True':
         show_figs = True
@@ -195,7 +202,10 @@ if __name__ == '__main__':
             #roi_data: dict (key = sn,ch)
             #of dicts (key = roi_response/roi_image/roi_mask/epoch_response/time_vector)
             #NOTE:roi_response is a list where each entry is a roi
-            roi_data[sn,ch] = ID.getRoiResponses(response_set_name, roi_prefix='aligned')
+            if sn == 'sn' + series_num[0]: # assume first series is search stim and use dff='pre' method
+                roi_data[sn,ch] = ID.getRoiResponses(response_set_name, roi_prefix='aligned', dff='pre')
+            else:
+                roi_data[sn,ch] = ID.getRoiResponses(response_set_name, roi_prefix='aligned', dff=dff)
 
             # check stimulus timing from photodiode trace
             
