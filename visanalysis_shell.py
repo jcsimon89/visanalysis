@@ -70,6 +70,8 @@ os.system('python ' + process_data_path
 
 
 tag = 'raw' #string "raw" or "final"
+dff = 'pre' #string "pre", "mean", or "none", default = "pre"
+
 analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
 
 os.system('python ' + analyze_data_path
@@ -77,7 +79,8 @@ os.system('python ' + analyze_data_path
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --dff ' + dff)
 
 
 #%% SELECT_FINAL_ROIS
@@ -97,6 +100,8 @@ os.system('python ' + select_rois_path
 
 
 tag = 'final' #string "raw" or "final"
+dff = 'mean' #string "pre", "mean", or "none", default = "pre"
+
 analyze_data_path = str(os.path.join(base_path,'analyze_data.py'))
 
 os.system('python ' + analyze_data_path
@@ -104,6 +109,7 @@ os.system('python ' + analyze_data_path
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --dff ' + dff)
 # %%
 

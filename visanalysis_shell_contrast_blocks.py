@@ -70,6 +70,8 @@ os.system('python ' + process_data_path
 
 
 tag = 'raw' #string "raw" or "final"
+dff = 'pre' #string "pre", "mean", or "none", default = "pre"
+
 analyze_data_path = str(os.path.join(base_path,'analyze_data_contrast_blocks.py'))
 
 os.system('python ' + analyze_data_path
@@ -77,19 +79,23 @@ os.system('python ' + analyze_data_path
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --dff ' + dff)
 
 
 #%% SELECT_FINAL_ROIS
 
-roi_tag = 'final'
+input_tag = ''
+output_tag = 'final'
+
 select_rois_path = str(os.path.join(base_path,'select_rois.py'))
 
 os.system('python ' + select_rois_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --save ' + save_hdf5
-                + ' --roi_tag' + roi_tag)
+                + ' --input_tag ' + input_tag
+                + ' --output_tag ' + output_tag)
 
 
 #%% ANALYZE_DATA FINAL
@@ -97,12 +103,14 @@ os.system('python ' + select_rois_path
 
 tag = 'final' #string "raw" or "final"
 analyze_data_path = str(os.path.join(base_path,'analyze_data_contrast_blocks.py'))
+dff = 'mean' #string "pre", "mean", or "none", default = "pre"
 
 os.system('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --dff ' + dff)
 # %%
 
