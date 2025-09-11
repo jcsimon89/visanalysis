@@ -596,14 +596,14 @@ if __name__ == '__main__':
             for ch_ind, current_channel in enumerate(func_channels_num):
                 ch = 'ch' + current_channel
                 for u_ind, up in enumerate(unique_parameter_values[sn]):
-                        current_intensity = up[0]
-                        intensity_ind = unique_intensity_values[sn].index(current_intensity)
-                        current_center_index = up[1]
-                        current_radius = up[2]
-                        radius_ind = unique_radius_values[sn].index(current_radius)
-                        if current_center_index == center_index:
-                            on_center_mean_response[roi_ind, ch_ind, intensity_ind, radius_ind,:] = mean_response[sn,ch][roi_ind, u_ind, :]
-                            on_center_sem_response[roi_ind, ch_ind, intensity_ind, radius_ind,:] = sem_response[sn,ch][roi_ind, u_ind, :]
+                    current_intensity = up[0]
+                    intensity_ind = unique_intensity_values[sn].index(current_intensity)
+                    current_center_index = up[1]
+                    current_radius = up[2]
+                    radius_ind = unique_radius_values[sn].index(current_radius)
+                    if current_center_index == center_index:
+                        on_center_mean_response[roi_ind, ch_ind, intensity_ind, radius_ind,:] = mean_response[sn,ch][roi_ind, u_ind, :]
+                        on_center_sem_response[roi_ind, ch_ind, intensity_ind, radius_ind,:] = sem_response[sn,ch][roi_ind, u_ind, :]
 
         print('on_center_mean_response: ' + repr(on_center_mean_response.shape))
 

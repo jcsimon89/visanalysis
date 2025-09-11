@@ -89,10 +89,11 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, roi_pre
             #print('type(roi_data): {}'.format(type(roi_data)))
             #print('roi_data.keys(): {}'.format(roi_data.keys()))
             #print('.time_vector: {}'.format(roi_data.get('time_vector')))
-            n_roi = mean_response[exp_ind,ch_ind].shape[0]
-            n_roi_total = n_roi_total + n_roi
-            n_timepoints.append(len(roi_data[exp_ind,ch_ind]['time_vector']))
-            sample_period.append(ImagingData.getAcquisitionMetadata('sample_period'))
+            if ch_ind==0: #only need to do this once for first channel
+                n_roi = mean_response[exp_ind,ch_ind].shape[0]
+                n_roi_total = n_roi_total + n_roi
+                n_timepoints.append(len(roi_data[exp_ind,ch_ind]['time_vector']))
+                sample_period.append(ImagingData.getAcquisitionMetadata('sample_period'))
         run_parameters = ImagingData.getRunParameters() # will be redefined in loop, but should be same for all scans
 
     # need to enforce same sample period for all experiments, assume for now
@@ -160,6 +161,141 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, roi_pre
             ax2[ch_ind, u_ind].set_ylabel('Response (dF/F)')
             ax2[ch_ind, u_ind].set_xlabel('Time (s)')
             ax2[ch_ind, u_ind].axvspan(run_parameters['pre_time'], run_parameters['pre_time'] + run_parameters['stim_time'], color='gray', alpha=0.2)
+
+def plotAllResponsesByCondition_RF_mapping(ImagingDataObjects, ch_names, condition, roi_prefix='rois'):
+    # plot all roi responses by 
+    # unpack roi_data and unique_parameter_values from all ImagingDataObjects
+
+    #ImagingDataObjects is a list of ImagingDataObject instances
+    #ch_names is a list of roi names (ex ['mask_ch1', 'mask_ch2'])
+
+    roi_data={}
+    unique_parameter_values=[]
+    mean_response={}
+    sem_response={}
+    trial_response_by_stimulus={}
+    sample_period = []
+    n_timepoints = []
+    n_roi_total = 0
+    func_channels_num = len(ch_names)
+
+    for exp_ind, ImagingData in enumerate(ImagingDataObjects):
+        fly_metadata = ImagingData.getSubjectMetadata()
+        print('fly_metadata: ' + repr(fly_metadata))
+
+        # IMPORTANT: SET TIMING_CHANNEL_IND (visanalysis assumes 0 and will default to first photodiode (ie fly left) of not set!)
+        prep = fly_metadata['prep']
+    
+        if prep == 'fly right optic lobe': #TODO: add condition to check if there are multiple PD channels?  Currently assuming there are two PD recordings
+            timing_channel_ind = 1
+        elif prep == 'fly left optic lobe':
+            timing_channel_ind = 0
+        else:
+            'could not find photodiode channel based on prep, defaulting to 0'
+            timing_channel_ind = 0
+        print('photodiode timing_channel_ind: ' + repr(timing_channel_ind))
+        ImagingData.timing_channel_ind = timing_channel_ind # IMPORTANT: set timing channel index for photodiode
+        for ch_ind, ch_name in enumerate(ch_names):
+            # get roi data
+            roi_data[exp_ind,ch_ind] = ImagingData.getRoiResponses(ch_name, roi_prefix=roi_prefix)
+            # extract mean_response and unique_parameter_values by condition 
+            
+            unique_intensity_values = ImagingData.getTrialAverages(roi_data[exp_ind,ch_ind]['epoch_response'], parameter_key='intensity')[0]
+            unique_radius_values = ImagingData.getTrialAverages(roi_data[exp_ind,ch_ind]['epoch_response'], parameter_key='radius')[0]
+            unique_center_index_values = ImagingData.getTrialAverages(roi_data[exp_ind,ch_ind]['epoch_response'], parameter_key='center_index')[0]
+            unique_parameter_values, mean_response[exp_ind,ch_ind], sem_response[exp_ind,ch_ind], trial_response_by_stimulus[exp_ind,ch_ind] = ImagingData.getTrialAverages(roi_data[exp_ind,ch_ind]['epoch_response'], parameter_key=['intensity','center_index','radius'])
+
+
+            #print('roi_data["epoch_response"].shape: {}'.format(roi_data['epoch_response'].shape))
+            #print('roi_data["roi_response"][0].shape: {}'.format(roi_data['roi_response'][0].shape))
+            #print('roi_data["time_vector"].shape: {}'.format(roi_data['time_vector'].shape))
+            #roi_data['epoch_response'] - 3D array of responses for each trial (roi, trial, time)
+            #roi_data['roi_response'] - list of roi responses (roi, time)
+            #roi_data['time_vector'] - 1d array of timepoints (one set for all measurements)
+            #print('type(roi_data): {}'.format(type(roi_data)))
+            #print('roi_data.keys(): {}'.format(roi_data.keys()))
+            #print('.time_vector: {}'.format(roi_data.get('time_vector')))
+            if ch_ind==0: #only need to do this once for first channel
+                n_roi = mean_response[exp_ind,ch_ind].shape[0]
+                n_roi_total = n_roi_total + n_roi
+                n_timepoints.append(len(roi_data[exp_ind,ch_ind]['time_vector']))
+                sample_period.append(ImagingData.getAcquisitionMetadata('sample_period'))
+        run_parameters = ImagingData.getRunParameters() # will be redefined in loop, but should be same for all scans
+
+    # need to enforce same sample period for all experiments, assume for now
+  
+    # combine data intelligently into single array with single time vector
+    # interpolate to match longest time vector
+    print('unique_parameter_values: ' + repr(unique_parameter_values))
+    n_timepoints = max(n_timepoints)
+    sample_period = min(sample_period)
+    total_time = n_timepoints * sample_period
+    print('resampling to {} timepoints, {}s sample period, {}s per epoch'.format(n_timepoints, sample_period, total_time))
+    # assume same unique_parameter_values for all experiments
+    print('unique_parameter_values ({}): {}'.format(condition,unique_parameter_values))
+
+    frames= range(0,n_timepoints)
+    time_vector = frames*sample_period
+    # mean_responses[exp_ind,ch_ind].shape: (nroi x unique values of parameter_key x time)
+
+    #mean_response(nroi x unique values of parameter_key x time)
+    #mean_response_interp(nroi x unique values of parameter_key x time x ch)
+    #mean_response_interp = np.empty([n_roi_total,len(unique_parameter_values),n_timepoints,len(ch_names)])
+    #print('mean_response_interp.shape: ' + repr(mean_response_interp.shape))
+
+    on_center_mean_response_interp = np.empty((n_roi_total, len(func_channels_num), len(unique_intensity_values), len(unique_radius_values), n_timepoints)) # numpy arrays(roi x channel x intensity x radius x time)
+    roi_counter = 0
+    for exp_ind, ImagingData in enumerate(ImagingDataObjects):
+        
+        # aggregate on-center mean data for each roi
+        
+        #TODO: load roi centers from json into roi_centers
+
+        n_roi = mean_response[exp_ind,0].shape[0] #n_roi in experiment, using first channel as reference
+        for roi_ind in range(n_roi): 
+            center_index = roi_centers[roi_ind]
+            for ch_ind, ch_name in enumerate(ch_names):
+                for u_ind, up in enumerate(unique_parameter_values):
+                    current_intensity = up[0]
+                    intensity_ind = unique_intensity_values.index(current_intensity)
+                    current_center_index = up[1]
+                    current_radius = up[2]
+                    radius_ind = unique_radius_values.index(current_radius)
+                    if current_center_index == center_index:
+                       
+                       # interpolate mean_response and sem_response to common time vector
+                        f = interp1d(roi_data[exp_ind,ch_ind]['time_vector'],mean_response[exp_ind,ch_ind][roi_ind,u_ind,:],kind='linear',axis=2,bounds_error = False)
+
+                        on_center_mean_response_interp[roi_ind + roi_counter, ch_ind, intensity_ind, radius_ind,:] = f(time_vector)
+        roi_counter = roi_counter + n_roi
+
+    print('on_center_mean_response_interp.shape (roi, channel, intensity, radius, time): ' + repr(on_center_mean_response_interp.shape))
+
+    fig_format = '.pdf'
+    fig_name_string = 'on-center_mean_responses_by_radii'
+
+    fh1, ax1 = plt.subplots(len(ch_names), len(unique_intensity_values), figsize=(10, 10*9/16),constrained_layout = True)
+    for u_ind, u_value in enumerate(unique_intensity_values):
+        for ch_ind, ch_name in enumerate(ch_names):
+            if 'ch1' in ch_name:
+                ch_label = 'ch1'
+            elif 'ch2' in ch_name:
+                ch_label = 'ch2'
+            else:
+                ch_label = 'unk ch'
+                print('could not extract channel label form roi set name')
+            
+            for radius_ind, radius in enumerate(unique_radius_values):
+            #query = {condition: u_value}
+            #trials = filterTrials(roi_data.get('epoch_response'), ImagingData, query)
+                y = np.mean(on_center_mean_response_interp[:,ch_ind,u_ind,radius_ind,:],axis=0).T
+                error = scipy.stats.sem(on_center_mean_response_interp[:,ch_ind,u_ind,radius_ind,:],axis=0).T
+                ax1[ch_ind,u_ind].plot(time_vector,y, color = 'k', label = 'radius = {}'.format(radius))
+                ax1[ch_ind,u_ind].fill_between(time_vector, y-error, y+error, color = 'c', alpha = 0.3) #, linestyle='-', color=ImagingData.colors[0])
+                ax1[ch_ind,u_ind].set_title('{}, Intensity = {}, {}ms Flash'.format(ch_label,u_value,1000*run_parameters['stim_time']))
+                ax1[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+                ax1[ch_ind, u_ind].set_xlabel('Time (s)')
+                ax1[ch_ind, u_ind].axvspan(run_parameters['pre_time'], run_parameters['pre_time'] + run_parameters['stim_time'], color='gray', alpha=0.2)
 
 def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, condition, roi_prefix='rois'):
     # plot all roi responses by 

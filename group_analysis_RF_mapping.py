@@ -39,7 +39,7 @@ mapping_IDs=[]
 for series in mapping_series:
     mapping_IDs.append(imaging_data.ImagingDataObject(series['file_name'], series['series'], quiet=True))
 
-shared_analysis.plotAllResponsesByCondition(mapping_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', roi_prefix='aligned')
+shared_analysis.plotAllResponsesByCondition_RF_mapping(mapping_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', roi_prefix='aligned')
 # %% ImagingDataObject wants a path to an hdf5 file and a series number from that file
 # ID = imaging_data.ImagingDataObject(file_path,
 #                                     series_number,
