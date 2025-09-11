@@ -58,7 +58,7 @@ class DataGUI(QWidget):
         self.image_file_path = image_file_path
         self.image_file_name = os.path.split(image_file_path)[-1]
         self.image_file_directory = os.path.split(image_file_path)[0]
-        self.max_rois = 200
+        self.max_rois = 999
         self.roi_type = 'freehand'
         self.roi_radius = None
         self.existing_roi_set_paths = {}
