@@ -20,6 +20,7 @@ from visanalysis.analysis import imaging_data
 from visanalysis.util import plot_tools
 import h5py
 import scipy.stats
+import math
 
 plt.ioff() #don't show plots unless called for with plt.show() 
 
@@ -211,7 +212,7 @@ if __name__ == '__main__':
             # extract unique values of all parameters
 
             # extract data by intensity, center location, radius
-            unique_parameter_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key=['angle'])
+            unique_parameter_values[sn], mean_response[sn,ch], sem_response[sn,ch], trial_response_by_stimulus[sn,ch] = ID.getTrialAverages(roi_data[sn,ch]['epoch_response'], parameter_key='angle')
         
             print('unique_parameter_values: ' + repr(unique_parameter_values))
 
@@ -387,23 +388,23 @@ if __name__ == '__main__':
     #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
     for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels   
         fig_name = 'mean_response_ch{}_all_{}_rois'.format(current_channel,tag)     
-        fh, ax = plt.subplots(2, len(unique_parameter_values[sn])/2, figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(1, len(unique_parameter_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
         ch = 'ch' + current_channel
         for u_ind, up in enumerate(unique_parameter_values[sn]):
-            ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
-            ax[ch_ind, u_ind].set_title('Ch{}, Angle = {}'.format(current_channel,up))
-            ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
-            ax[ch_ind, u_ind].set_xlabel('Time (s)')
-            ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
-    plt.suptitle("mean response, all {} rois".format(tag))
+            ax[u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
+            ax[u_ind].set_title('Ch{}, Angle = {}'.format(current_channel,up))
+            ax[u_ind].set_ylabel('Mean Response (dF/F)')
+            ax[u_ind].set_xlabel('Time (s)')
+            ax[u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+        plt.suptitle("mean response, all {} rois".format(tag))
 
-    if save_figs:
-        plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+        if save_figs:
+            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
-    if show_figs:
-        plt.show()
+        if show_figs:
+            plt.show()
 
-    plt.close()
+        plt.close()
 
     # plot 2: mean responses to stimulus (series 1) - per roi
                 #2 rows (per condition (light/dark flash))
@@ -411,28 +412,32 @@ if __name__ == '__main__':
     sn = series #assume first series is search stim
     fig_name_string = 'mean_response'
     fig_format = '.pdf'
-    fh, ax = plt.subplots(len(func_channels_num), len(unique_parameter_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
     #[plot_tools.cleanAxes(x) for x in ax.ravel()]
     for roi_ind in range(n_roi):
         #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
         for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
             ch = 'ch' + current_channel
-            for u_ind, up in enumerate(unique_intensity_values[sn]):
-                ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
-                ax[ch_ind, u_ind].set_title('Ch{}, Angle = {}'.format(current_channel,up))
-                ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
-                ax[ch_ind, u_ind].set_xlabel('Time (s)')
-                ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
-        plt.suptitle("mean response, {} roi {} ".format(tag,roi_ind))
-        
-        if save_figs:
-            fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
-            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+            fh, ax = plt.subplots(2, math.ceil(len(unique_parameter_values[sn])/2), figsize=(12, 12*(9/16)),constrained_layout = True)
+            for u_ind, up in enumerate(unique_parameter_values[sn]):
+                if u_ind < math.ceil(len(unique_parameter_values[sn])/2):
+                    plot_ind=[0,u_ind]
+                else:
+                    plot_ind=[1, u_ind - math.ceil(len(unique_parameter_values[sn])/2)]
+                ax[plot_ind[0], plot_ind[1]].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
+                ax[plot_ind[0], plot_ind[1]].set_title('{}, Angle = {}'.format(ch,up))
+                ax[plot_ind[0], plot_ind[1]].set_ylabel('Mean Response (dF/F)')
+                ax[plot_ind[0], plot_ind[1]].set_xlabel('Time (s)')
+                ax[plot_ind[0], plot_ind[1]].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+            plt.suptitle("mean response, {}, {} roi {} ".format(ch,tag,roi_ind))
+            
+            if save_figs:
+                fig_name = fig_name_string + '_{}_roi_{}_'.format(ch,roi_ind)
+                plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
-        if show_figs:
-            plt.show()
+            if show_figs:
+                plt.show()
 
-        plt.close()
+            plt.close()
     
     
 
