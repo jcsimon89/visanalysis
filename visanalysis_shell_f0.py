@@ -37,35 +37,38 @@ import h5py
 
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
-experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS252/fly_012' #string to folder containing fly.hdf5 file
+#individual rois
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS252/fly_012' #string to folder containing fly.hdf5 file
+#with whole slice roi
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS252/fly_013'
+experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS252/fly_014'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS257/fly_007'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS257/fly_008'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS257/fly_009'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS258/fly_001'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS258/fly_002'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS258/fly_003'
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
 # process_data
-series_number_for_roi_selection = '1' #string 
 run_gui = 'True' #string "True" or "False", default = "False"
 attach_metadata = 'True' #string "True" or "False", default = "False"
-
-# analyze_data
 show_figs = 'False' #string "True" or "False", default = "False"
 save_figs = 'True' #string "True" or "False", default = "False"
 
-# select_final_rois
-save_hdf5 = 'True'#string "True" or "False", default = "False"
-
 # series numbers
-series_num = [[0, 1], [2, 3]] #list of lists, each sublist is a set of series numbers to analyze together
-channel_num = [[1, 2], [1, 2]] #list of lists, each sublist is a set of channel numbers corresponding to series numbers
+series_num = '0,1/2,3' #series for each experiment set, separated by commas, sets of series separated by slashes
+channel_num = '1,2/1,2' #list of lists, each sublist is a set of channel numbers corresponding to series numbers
 # note: first series and chennel listed will be used for roi selection
 
 #%% PROCESS_DATA
 
 
-process_data_path = str(os.path.join(base_path,'process_data.py'))
+process_data_path = str(os.path.join(base_path,'process_data_f0.py'))
 
 os.system('python ' + process_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
-                + ' --series_number ' + series_number_for_roi_selection
                 + ' --run_gui ' + run_gui
                 + ' --attach_metadata ' + attach_metadata
                 + ' --show_figs ' + show_figs
