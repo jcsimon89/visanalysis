@@ -12,6 +12,7 @@ from visanalysis.util import plot_tools
 from collections.abc import Sequence
 from scipy.interpolate import interp1d
 import scipy.stats
+import seaborn as sns
 
 
 def matchQuery(epoch_parameters, query):
@@ -425,6 +426,38 @@ def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, conditio
                 ax1[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax1[ch_ind, u_ind].axvspan(run_parameters['pre_time'], run_parameters['pre_time'] + run_parameters['stim_time'], color='gray', alpha=0.2)
 
+def plotF0ByConditionComparison(voxel_mean, quiet=True):
+    """
+    Plot average F0 by condition for multiple groups of ImagingDataObjects.
+
+    Parameters
+    ----------
+
+
+    Returns
+    -------
+    None.
+
+    """
+    
+    keys = list(voxel_mean.keys())
+    channels = list(dict.fromkeys([j for i in voxel_mean.values() for j in i.keys()]))
+
+    if not quiet:
+        print('keys: ' + str(keys))
+        print('channels: ' + str(channels))
+    for ch in channels:
+        y={}
+        fig = plt.figure()
+        plt.title('voxel intensity violin plot ' + str(ch))
+        plt.ylabel('voxel intensity')
+        # make violin plot of voxel_mean for each channel, key
+        for key in keys:
+            y[key]=voxel_mean[key][ch]
+        sns.violinplot(y)
+        plt.show()
+        plt.close()
+
 
 def plotRoiResponses(ImagingData, roi_name):
     roi_data = ImagingData.getRoiResponses(roi_name)
@@ -527,6 +560,28 @@ def filterDataFiles(data_directory,
         print('Found {} matching series'.format(len(matching_series)))
     return matching_series
 
+def filterPklFiles(data_directory,
+                    file_search_string='*.pkl',
+                    quiet=False,
+                    recursive=False):
+    """
+    Searches through a directory of visprotocol datafiles and finds datafiles/series that match the search values
+    Can search based on any number of fly metadata params or run parameters
+
+    Params
+        -data_directory: directory of visprotocol data files to search through
+
+    Returns
+        -matching_series: List of matching series dicts with all fly & run params as well as file name and series number
+    """
+    fileNames = glob.glob(data_directory + file_search_string, recursive=recursive)
+    if not quiet:
+        print('filename search string: {}'.format(file_search_string))
+        print('searching in directory: {}'.format(data_directory))
+        print('recursive search: {}'.format(recursive))
+        print('Found {} files in {}'.format(len(fileNames), data_directory))
+        print('fileNames: ' + repr(fileNames))
+    return fileNames
 
 def checkAgainstTargetDict(target_dict, test_dict):
     for key in target_dict:
