@@ -36,8 +36,10 @@ if __name__ == '__main__':
     parser.add_argument("--show_figs", nargs="?", help="True/False")
     parser.add_argument("--save_figs", nargs="?", help="True/False")
     parser.add_argument("--tag", nargs="?", help="raw/final")
+    parser.add_argument("--response_set_name_prefix", nargs="?", default='mask', help="name of roi set for analysis")
     args = parser.parse_args()
 
+    response_set_name_prefix = args.response_set_name_prefix
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
 
@@ -71,7 +73,6 @@ if __name__ == '__main__':
         experiment_file_name = 'fly_' + tag + '.hdf5'
 
     json_file_name = 'fly.json'
-    response_set_name_prefix = 'mask_' #once channel is added, will be of form mask_ch1 (these are names saved from process_data.py)
 
     # extract info from fly.json 
 
@@ -191,7 +192,7 @@ if __name__ == '__main__':
         for current_channel in func_channels_num: #loop through channels
             current_channel = int(current_channel) # methods expect channel number to be datatype int            
             ch = 'ch' + str(current_channel)
-            response_set_name = response_set_name_prefix + ch
+            response_set_name = response_set_name_prefix + '_' + ch
             
             ## Save ROIS AND RESPONSES for each series and channel to roi_data
             
@@ -320,7 +321,7 @@ if __name__ == '__main__':
 
     # make raw fig save directory (if it doesn't exist)
     figs_folder_name = tag + '_roi_figs'
-    figs_dir = os.path.join(experiment_file_directory,figs_folder_name)
+    figs_dir = os.path.join(experiment_file_directory,figs_folder_name,response_set_name_prefix)
     os.makedirs(figs_dir, exist_ok=True)
 
     # Plot: overlay all roi_masks on roi_image
@@ -388,14 +389,18 @@ if __name__ == '__main__':
     #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
     for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels   
         fig_name = 'mean_response_ch{}_all_{}_rois'.format(current_channel,tag)     
-        fh, ax = plt.subplots(1, len(unique_parameter_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(2, math.ceil(len(unique_parameter_values[sn])/2), figsize=(12, 12*(9/16)),constrained_layout = True)
         ch = 'ch' + current_channel
         for u_ind, up in enumerate(unique_parameter_values[sn]):
-            ax[u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
-            ax[u_ind].set_title('Ch{}, Angle = {}'.format(current_channel,up))
-            ax[u_ind].set_ylabel('Mean Response (dF/F)')
-            ax[u_ind].set_xlabel('Time (s)')
-            ax[u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+            if u_ind < math.ceil(len(unique_parameter_values[sn])/2):
+                plot_ind=[0,u_ind]
+            else:
+                plot_ind=[1, u_ind - math.ceil(len(unique_parameter_values[sn])/2)]
+            ax[plot_ind[0],plot_ind[1]].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
+            ax[plot_ind[0],plot_ind[1]].set_title('Ch{}, Angle = {}'.format(current_channel,up))
+            ax[plot_ind[0],plot_ind[1]].set_ylabel('Mean Response (dF/F)')
+            ax[plot_ind[0],plot_ind[1]].set_xlabel('Time (s)')
+            ax[plot_ind[0],plot_ind[1]].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
         plt.suptitle("mean response, all {} rois".format(tag))
 
         if save_figs:
@@ -450,10 +455,10 @@ if __name__ == '__main__':
             sn = 'sn' + current_series
             for ch_ind, current_channel in enumerate(func_channels_num):
                 ch = 'ch' + current_channel
-                ax[ch_ind, series_ind].plot(roi_data[sn,ch]['roi_response'][roi_ind].T)
-                ax[ch_ind, series_ind].set_xlabel('Frame')
-                ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
-                ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
+                ax[ch_ind].plot(roi_data[sn,ch]['roi_response'][roi_ind].T)
+                ax[ch_ind].set_xlabel('Frame')
+                ax[ch_ind].set_ylabel('Avg ROI intensity')
+                ax[ch_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
         plt.suptitle('mean roi intensity, {} roi {}'.format(tag,roi_ind))
 
         if save_figs:
@@ -473,10 +478,10 @@ if __name__ == '__main__':
         sn = 'sn' + current_series
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
-            ax[ch_ind, series_ind].plot(np.mean(roi_data[sn,ch]['roi_response'][:], axis=0).T)
-            ax[ch_ind, series_ind].set_xlabel('Frame')
-            ax[ch_ind, series_ind].set_ylabel('Avg ROI intensity')
-            ax[ch_ind, series_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
+            ax[ch_ind].plot(np.mean(roi_data[sn,ch]['roi_response'][:], axis=0).T)
+            ax[ch_ind].set_xlabel('Frame')
+            ax[ch_ind].set_ylabel('Avg ROI intensity')
+            ax[ch_ind].set_title('series {}, channel {}'.format(current_series, current_channel))
     plt.suptitle('mean roi intensity, all {} rois'.format(tag))
 
     if save_figs:
@@ -488,140 +493,166 @@ if __name__ == '__main__':
     plt.close()
     
 
-    if tag == 'good' or tag == 'final':
 
-        # FIGURE: individual roi data for smallest radius circle at each center location (to pick correct center location)
-
+    if tag == 'final' and response_set_name_prefix == 'Lobula':
+        # plot 5: combined mean response - combined mean of all final rois
         sn = series
-        fig_format = '.pdf'
-        fig_name_string = 'mean_responses_by_angle'
-
-        for roi_ind in range(n_roi):
-
-            fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
-            # plot response for all center locations on same axes for each intensity, channel
-
-            min_radius = min(unique_parameter_values[sn], key=lambda x: x[2])[2] # smallest radius
-
-            for ch_ind, current_channel in enumerate(func_channels_num):
-                ch = 'ch' + current_channel
-                for intensity_ind, intensity in enumerate(unique_intensity_values[sn]):
-                    for u_ind, up in enumerate(unique_parameter_values[sn]):
-                        current_intensity = up[0]
-                        current_center_index = up[1]
-                        current_radius = up[2]
-                        if current_intensity == intensity:
-                            if current_radius == min_radius:
-                                ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T, label='center index: {}'.format(current_center_index))
-                                ax[ch_ind, intensity_ind].legend(loc='upper right')
-                                ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
-                                ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
-                                ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
-
-                                ax[ch_ind, intensity_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
-            plt.suptitle('Mean responses, {} roi {}, radius {}'.format(tag,roi_ind,min_radius))
-
-            if save_figs:
-                fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
-                plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
-
-            if show_figs:
-                plt.show()
-
-            plt.close()
-        
-    if tag == 'final':
-
-        # FIGURE: analyze all data from correct center location per roi
-
-        sn = mapping_series
-        fig_format = '.pdf'
-        fig_name_string = 'mean_responses_by_radii'
-
-        for roi_ind in range(n_roi):
-
-            fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
-            # plot response for all radii on same axes at correct center location for each intensity, channel
-
-            center_index = roi_centers[roi_ind]
-
-            for ch_ind, current_channel in enumerate(func_channels_num):
-                ch = 'ch' + current_channel
-                for intensity_ind, intensity in enumerate(unique_intensity_values[sn]):
-                    for u_ind, up in enumerate(unique_parameter_values[sn]):
-                        current_intensity = up[0]
-                        current_center_index = up[1]
-                        current_radius = up[2]
-                        if current_intensity == intensity:
-                            if current_center_index == center_index:
-                                ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T, label='radius: {}'.format(current_radius))
-                                ax[ch_ind, intensity_ind].legend(loc='upper right')
-                                ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
-                                ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
-                                ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
-
-                                ax[ch_ind, intensity_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
-            plt.suptitle('Mean responses, {} roi {}'.format(tag,roi_ind))
-
-            if save_figs:
-                fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
-                plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
-
-            if show_figs:
-                plt.show()
-
-            plt.close()
-
-        # FIGURE: analyze mean data from correct center location
-
-        sn = mapping_series
-        fig_format = '.pdf'
-        fig_name_string = 'on-center_mean_responses_by_radii'
-
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
-        # plot response for all radii on same axes at correct center location for each intensity, channel
-
-        # extract on-center data for all rois
-
-        on_center_mean_response = np.empty([n_roi, len(func_channels_num), len(unique_intensity_values[sn]), len(unique_radius_values[sn]), mean_response[sn,'ch' + str(func_channels_num[0])].shape[2]]) # numpy arrays(roi x channel x intensity x radius x time)
-        on_center_sem_response = np.empty(on_center_mean_response.shape) # numpy array (roi x channel x intensity x radius x time)
-
-        for roi_ind in range(n_roi):
-
-            center_index = roi_centers[roi_ind]
-
-            for ch_ind, current_channel in enumerate(func_channels_num):
-                ch = 'ch' + current_channel
-                for u_ind, up in enumerate(unique_parameter_values[sn]):
-                    current_intensity = up[0]
-                    intensity_ind = unique_intensity_values[sn].index(current_intensity)
-                    current_center_index = up[1]
-                    current_radius = up[2]
-                    radius_ind = unique_radius_values[sn].index(current_radius)
-                    if current_center_index == center_index:
-                        on_center_mean_response[roi_ind, ch_ind, intensity_ind, radius_ind,:] = mean_response[sn,ch][roi_ind, u_ind, :]
-                        on_center_sem_response[roi_ind, ch_ind, intensity_ind, radius_ind,:] = sem_response[sn,ch][roi_ind, u_ind, :]
-
-        print('on_center_mean_response: ' + repr(on_center_mean_response.shape))
-
-        # plot on-center mean responses
-
+        fig_name = 'combined_mean_responses_all_{}_rois'.format(tag)
+        fig_format = '.pdf' 
+        fh, ax = plt.subplots(len(func_channels_num), 1, figsize=(12, 12*(9/16)),constrained_layout = True)
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
-            for intensity_ind, current_intensity in enumerate(unique_intensity_values[sn]):
-                for radius_ind, current_radius in enumerate(unique_radius_values[sn]):
-                    ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], np.mean(on_center_mean_response[:, ch_ind, intensity_ind, radius_ind, :], axis=0).T, label='radius: {}'.format(current_radius))
-                    ax[ch_ind, intensity_ind].legend(loc='upper right')
-                    ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
-                    ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
-                    ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
-            plt.suptitle('On-center mean responses')
+            x = roi_data[sn,ch]['time_vector']
+            y = np.mean(np.mean(mean_response[sn,ch][:, :, :],1),0).T
+            error = scipy.stats.sem(np.mean(mean_response[sn,ch][:, :, :],1),0).T
+            ax[ch_ind].plot(x, y, color = 'k')
+            ax[ch_ind].fill_between(x, y-error, y+error, color = 'c', alpha = 0.3)
+            ax[ch_ind].set_ylabel('Response (dF/F)')
+            ax[ch_ind].set_xlabel('Time (s)')
+            ax[ch_ind].set_title('Ch{}'.format(current_channel))
+            ax[ch_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+            plt.suptitle('combined mean response, all {} rois'.format(tag))
 
         if save_figs:
-            fig_name = fig_name_string
-            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+                plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
         if show_figs:
-            plt.show()
+                plt.show()
 
         plt.close()
+
+    #     # FIGURE: individual roi data for smallest radius circle at each center location (to pick correct center location)
+
+    #     sn = series
+    #     fig_format = '.pdf'
+    #     fig_name_string = 'mean_responses_by_angle'
+
+    #     for roi_ind in range(n_roi):
+
+    #         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+    #         # plot response for all center locations on same axes for each intensity, channel
+
+    #         min_radius = min(unique_parameter_values[sn], key=lambda x: x[2])[2] # smallest radius
+
+    #         for ch_ind, current_channel in enumerate(func_channels_num):
+    #             ch = 'ch' + current_channel
+    #             for intensity_ind, intensity in enumerate(unique_intensity_values[sn]):
+    #                 for u_ind, up in enumerate(unique_parameter_values[sn]):
+    #                     current_intensity = up[0]
+    #                     current_center_index = up[1]
+    #                     current_radius = up[2]
+    #                     if current_intensity == intensity:
+    #                         if current_radius == min_radius:
+    #                             ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T, label='center index: {}'.format(current_center_index))
+    #                             ax[ch_ind, intensity_ind].legend(loc='upper right')
+    #                             ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
+    #                             ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
+    #                             ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
+
+    #                             ax[ch_ind, intensity_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+    #         plt.suptitle('Mean responses, {} roi {}, radius {}'.format(tag,roi_ind,min_radius))
+
+    #         if save_figs:
+    #             fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+    #             plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+    #         if show_figs:
+    #             plt.show()
+
+    #         plt.close()
+        
+    # if tag == 'final':
+
+    #     # FIGURE: analyze all data from correct center location per roi
+
+    #     sn = mapping_series
+    #     fig_format = '.pdf'
+    #     fig_name_string = 'mean_responses_by_radii'
+
+    #     for roi_ind in range(n_roi):
+
+    #         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+    #         # plot response for all radii on same axes at correct center location for each intensity, channel
+
+    #         center_index = roi_centers[roi_ind]
+
+    #         for ch_ind, current_channel in enumerate(func_channels_num):
+    #             ch = 'ch' + current_channel
+    #             for intensity_ind, intensity in enumerate(unique_intensity_values[sn]):
+    #                 for u_ind, up in enumerate(unique_parameter_values[sn]):
+    #                     current_intensity = up[0]
+    #                     current_center_index = up[1]
+    #                     current_radius = up[2]
+    #                     if current_intensity == intensity:
+    #                         if current_center_index == center_index:
+    #                             ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T, label='radius: {}'.format(current_radius))
+    #                             ax[ch_ind, intensity_ind].legend(loc='upper right')
+    #                             ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
+    #                             ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
+    #                             ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
+
+    #                             ax[ch_ind, intensity_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+    #         plt.suptitle('Mean responses, {} roi {}'.format(tag,roi_ind))
+
+    #         if save_figs:
+    #             fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+    #             plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+    #         if show_figs:
+    #             plt.show()
+
+    #         plt.close()
+
+    #     # FIGURE: analyze mean data from correct center location
+
+    #     sn = mapping_series
+    #     fig_format = '.pdf'
+    #     fig_name_string = 'on-center_mean_responses_by_radii'
+
+    #     fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+    #     # plot response for all radii on same axes at correct center location for each intensity, channel
+
+    #     # extract on-center data for all rois
+
+    #     on_center_mean_response = np.empty([n_roi, len(func_channels_num), len(unique_intensity_values[sn]), len(unique_radius_values[sn]), mean_response[sn,'ch' + str(func_channels_num[0])].shape[2]]) # numpy arrays(roi x channel x intensity x radius x time)
+    #     on_center_sem_response = np.empty(on_center_mean_response.shape) # numpy array (roi x channel x intensity x radius x time)
+
+    #     for roi_ind in range(n_roi):
+
+    #         center_index = roi_centers[roi_ind]
+
+    #         for ch_ind, current_channel in enumerate(func_channels_num):
+    #             ch = 'ch' + current_channel
+    #             for u_ind, up in enumerate(unique_parameter_values[sn]):
+    #                 current_intensity = up[0]
+    #                 intensity_ind = unique_intensity_values[sn].index(current_intensity)
+    #                 current_center_index = up[1]
+    #                 current_radius = up[2]
+    #                 radius_ind = unique_radius_values[sn].index(current_radius)
+    #                 if current_center_index == center_index:
+    #                     on_center_mean_response[roi_ind, ch_ind, intensity_ind, radius_ind,:] = mean_response[sn,ch][roi_ind, u_ind, :]
+    #                     on_center_sem_response[roi_ind, ch_ind, intensity_ind, radius_ind,:] = sem_response[sn,ch][roi_ind, u_ind, :]
+
+    #     print('on_center_mean_response: ' + repr(on_center_mean_response.shape))
+
+    #     # plot on-center mean responses
+
+    #     for ch_ind, current_channel in enumerate(func_channels_num):
+    #         ch = 'ch' + current_channel
+    #         for intensity_ind, current_intensity in enumerate(unique_intensity_values[sn]):
+    #             for radius_ind, current_radius in enumerate(unique_radius_values[sn]):
+    #                 ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], np.mean(on_center_mean_response[:, ch_ind, intensity_ind, radius_ind, :], axis=0).T, label='radius: {}'.format(current_radius))
+    #                 ax[ch_ind, intensity_ind].legend(loc='upper right')
+    #                 ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
+    #                 ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
+    #                 ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
+    #         plt.suptitle('On-center mean responses')
+
+    #     if save_figs:
+    #         fig_name = fig_name_string
+    #         plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+    #     if show_figs:
+    #         plt.show()
+
+    #     plt.close()

@@ -45,13 +45,16 @@ import h5py
 
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
-experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS144_x_JS252/fly_001' #string to folder containing fly.hdf5 file
+experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS144_x_JS252/fly_002' #string to folder containing fly.hdf5 file
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
 # process_data
 series_number_for_roi_selection = '1' #string 
 run_gui = 'True' #string "True" or "False", default = "False"
-attach_metadata = 'True' #string "True" or "False", default = "False"
+attach_metadata = 'False' #string "True" or "False", default = "False"
+roi_set_name = 'LobulaPlate' #Lobula or LobulaPlate for T5
+#roi_set_name = 'LobulaPlate'
+response_set_name_prefix = roi_set_name
 
 # analyze_data
 show_figs = 'False' #string "True" or "False", default = "False"
@@ -71,7 +74,9 @@ os.system('python ' + process_data_path
                 + ' --rig ' + rig
                 + ' --series_number ' + series_number_for_roi_selection
                 + ' --run_gui ' + run_gui
-                + ' --attach_metadata ' + attach_metadata)
+                + ' --attach_metadata ' + attach_metadata
+                + ' --roi_set_name ' + roi_set_name
+                + ' --response_set_name_prefix '+ response_set_name_prefix)
 
 
 #%% ANALYZE_DATA RAW
@@ -85,7 +90,8 @@ os.system('python ' + analyze_data_path
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --response_set_name_prefix '+ response_set_name_prefix)
 
 #%% SELECT_FINAL_ROIS
 input_tag = ''
@@ -97,7 +103,8 @@ os.system('python ' + select_rois_path
                 + ' --rig ' + rig
                 + ' --save ' + save_hdf5
                 + ' --input_tag ' + input_tag
-                + ' --output_tag ' + output_tag)
+                + ' --output_tag ' + output_tag
+                + ' --response_set_name_prefix '+ response_set_name_prefix)
 
 
 #%% ANALYZE_DATA Final
@@ -111,5 +118,6 @@ os.system('python ' + analyze_data_path
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --response_set_name_prefix '+ response_set_name_prefix)
 
