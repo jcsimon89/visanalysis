@@ -30,8 +30,12 @@ if __name__ == '__main__':
     parser.add_argument("--save", nargs="?", help="True/False")
     parser.add_argument("--input_tag", nargs="?", help="Good/Final/etc. label for input data (can be empty string)")
     parser.add_argument("--output_tag", nargs="?", help="Good/Final/etc. label for output data")
+    parser.add_argument("--response_set_name_prefix", nargs="?", default='mask', help="name of roi set for analysis")
+    parser.add_argument("--roi_parameter_names", nargs="*", default=['ind'], help="roi parameters to be saved in h5 file (ex 'ind','center','direction'), not first entry must be ind!")
     args = parser.parse_args()
 
+    roi_parameter_names = args.roi_parameter_names
+    response_set_name_prefix = args.response_set_name_prefix
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
     
@@ -61,7 +65,6 @@ if __name__ == '__main__':
         experiment_file_name = 'fly_' + input_tag + '.hdf5'
 
     rois_json_file_name = output_tag + '_rois.json'
-    response_set_name_prefix = 'mask_' #once channel is added, will be of form mask_ch1 (these are names saved from process_data.py)
     roi_prefix = 'aligned'
     hdf5_save_path = os.path.join(experiment_file_directory,'fly_' + output_tag + '.hdf5') # save path
     if save:
@@ -84,12 +87,14 @@ if __name__ == '__main__':
     print('func_channels = ' + str(func_channels))
     print('func_channels_num = ' + str(func_channels_num))
 
-    # extract roi_ind_final from final_rois.json 
+    # extract roi parameters from final_rois.json 
 
     with open(pathlib.Path(experiment_file_directory, rois_json_file_name), 'r') as file:
-        roi_ind_final_json = json.load(file)
-    roi_ind_final = roi_ind_final_json['roi_ind_final'] #list of integers
-    print('roi_ind_final: ' + repr(roi_ind_final))
+        json_data = json.load(file)
+    roi_parameters = {} #initialize dict
+    for p_ind, param in enumerate(roi_parameter_names):
+        roi_parameters[param] = [int(x.split(',')[p_ind]) for x in json_data[response_set_name_prefix]]
+        print('roi_parameters[{}]'.format(param) + ': ' + repr(roi_parameters[param]))
 
     # instatiate correct data object plugin based on rig
 
@@ -142,7 +147,7 @@ if __name__ == '__main__':
         for current_channel in func_channels_num: #loop through channels
             current_channel = int(current_channel) # methods expect channel number to be datatype int            
             ch = 'ch' + str(current_channel)
-            response_set_name = response_set_name_prefix + ch
+            response_set_name = response_set_name_prefix + '_' + ch
             
             ## Save ROIS AND RESPONSES for each series and channel to roi_data
             
@@ -174,43 +179,84 @@ if __name__ == '__main__':
                     try:
                         for k in range(mask.shape[2]):
                             if mask[i,j,k] != 0:
-                                if mask[i,j,k] not in roi_ind_final:
+                                if mask[i,j,k] not in roi_parameters['ind']:
                                     mask[i,j,k] = 0
-                                else: mask[i,j,k] = roi_ind_final.index(mask[i,j,k]) + 1 #find ind in roi_ind_final and set to that value +1 (since mask counting starts at 1 not 0)
+                                else: mask[i,j,k] = roi_parameters['ind'].index(mask[i,j,k]) + 1 #find ind in roi_parameters['ind'] and set to that value +1 (since mask counting starts at 1 not 0)
                                 #TODO: start mask value back at 1 for final rois or keep same roi numbers?
                                 # currently renumbering final rois
                     except:
                         print('data is not three dimensional, trying with two dimensions')
                         if mask[i,j] != 0:
-                                if mask[i,j] not in roi_ind_final:
+                                if mask[i,j] not in roi_parameters['ind']:
                                     mask[i,j] = 0
-                                else: mask[i,j] = roi_ind_final.index(mask[i,j]) + 1 #find ind in roi_ind_final and set to that value +1 (since mask counting starts at 1 not 0)
+                                else: mask[i,j] = roi_parameters['ind'].index(mask[i,j]) + 1 #find ind in roi_parameters['ind'] and set to that value +1 (since mask counting starts at 1 not 0)
                                 #TODO: start mask value back at 1 for final rois or keep same roi numbers?
                                 # currently renumbering final rois
             roi_data_final[sn,ch]['roi_mask'] = mask
             roi_data_final[sn,ch]['roi_image'] = roi_data[sn,ch]['roi_image'] #TODO:i think roi_image is just a meanbrain image but need to check, different for each channel???
-            roi_data_final[sn,ch]['roi_response'] = [roi_data[sn,ch]['roi_response'][i] for i in roi_ind_final]
+            roi_data_final[sn,ch]['roi_response'] = [roi_data[sn,ch]['roi_response'][i] for i in roi_parameters['ind']]
+            for param in roi_parameter_names:
+                    roi_data_final[param] = roi_parameters[param]
 
     if save:
-        with h5py.File(experiment_file_path, 'r') as h5r:
+        if not os.path.exists(hdf5_save_path):
+            with h5py.File(experiment_file_path, 'r') as h5r:
+                with h5py.File(hdf5_save_path, 'w') as h5w:
+                    for obj in h5r.keys():        
+                        h5r.copy(obj, h5w)
+                    for current_series in series_num: #loop through all series
+                        sn = 'sn' + current_series
+                        for current_channel in func_channels_num: #loop through channels
+                            ch = 'ch' + current_channel
+                            if '/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_image' in h5w:
+                                del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                                '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_image']
+                            if '/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_mask' in h5w:
+                                del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                                '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_mask']
+                            if '/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_response' in h5w:
+                                del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                                '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_response']
+                            h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                            '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_image',data=roi_data_final[sn,ch]['roi_image'])
+                            h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                            '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_mask',data=roi_data_final[sn,ch]['roi_mask'])
+                            h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                            '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
+                            for param in roi_parameter_names:
+                                if '/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '/{}'.format(param) in h5w:
+                                    del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                                    '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '/{}'.format(param)]
+                                h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                                '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '/{}'.format(param),data=roi_data_final[param])
+                    h5w.close()
+                h5r.close()
+        else:
             with h5py.File(hdf5_save_path, 'w') as h5w:
-                for obj in h5r.keys():        
-                    h5r.copy(obj, h5w)
                 for current_series in series_num: #loop through all series
                     sn = 'sn' + current_series
                     for current_channel in func_channels_num: #loop through channels
                         ch = 'ch' + current_channel
-                        del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_image']
-                        del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask']
-                        del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response']
+                        if '/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_image' in h5w:
+                            del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                            '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_image']
+                        if '/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_mask' in h5w:
+                            del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                            '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_mask']
+                        if '/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_response' in h5w:
+                            del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                            '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_response']
                         h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_image',data=roi_data_final[sn,ch]['roi_image'])
+                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_image',data=roi_data_final[sn,ch]['roi_image'])
                         h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_mask',data=roi_data_final[sn,ch]['roi_mask'])
+                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_mask',data=roi_data_final[sn,ch]['roi_mask'])
                         h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
-                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + ch + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])       
-        
-        h5r.close()
+                        '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '_' + ch + '/roi_response',data=roi_data_final[sn,ch]['roi_response'])
+                        for param in roi_parameter_names:
+                            if '/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '/{}'.format(param) in h5w:
+                                del h5w['/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                                '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '/{}'.format(param)]
+                            h5w.create_dataset('/Subjects/{}/epoch_runs/series_00'.format(subject_number) + current_series + 
+                            '/{}/{}'.format(roi_prefix,response_set_name_prefix) + '/{}'.format(param),data=roi_data_final[param])     
+
+                h5w.close()

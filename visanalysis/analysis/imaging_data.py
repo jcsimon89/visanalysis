@@ -976,6 +976,36 @@ class ImagingDataObject:
 
     # # # #  # # # # # # # # # CONVENIENCE METHODS # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+    def getRoiParameters(
+        self,
+        roi_set_name,
+        parameter,
+        roi_prefix="aligned",
+    ):
+        """
+        Get parameter for indicated roi set
+        Params:
+            -roi_set_name: (str) name of roi set to pull out
+            -roi_prefix: 'rois' or 'aligned'
+                    'rois' used for hand-drawn ROIs, with path objects
+                    'aligned' used for mask-generated, no path objects for drawing
+
+        Returns:
+            roi_parameter 
+        """
+
+        with h5py.File(self.file_path, "r") as experiment_file:
+            find_partial = functools.partial(h5io.find_series, sn=self.series_number)
+            roi_parent_group = experiment_file.visititems(find_partial)[roi_prefix]
+            assert (
+                roi_set_name in roi_parent_group
+            ), 'roi_set_name "{}" not found in roi group'.format(roi_set_name)
+            roi_set_group = roi_parent_group[roi_set_name]
+            
+            roi_parameters = roi_set_group.get(parameter)[:]
+
+        return roi_parameters
+    
     def getEpochGroupingsByParameters(self, parameter_key=None, replace_parameter_value=None):
         """
         getEpochGroupingsByParameters(sel f, parameter_key=None)
