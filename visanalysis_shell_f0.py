@@ -57,8 +57,10 @@ show_figs = 'False' #string "True" or "False", default = "False"
 save_figs = 'True' #string "True" or "False", default = "False"
 
 # series numbers
-series_num = '0,1/2,3' #series for each experiment set, separated by commas, sets of series separated by slashes
-channel_num = '1,2/1,2' #list of lists, each sublist is a set of channel numbers corresponding to series numbers
+#ex: '0,1 2,3' #series numbers for each experiment set separated by commas with no spaces, sets of series separated by space
+series_num = '0,1 2,3'
+#channel_num = '1,2 1,2' #channel numbers corresponding to series numbers in same format
+channel_num = '1,2 1,2'
 # note: first series and chennel listed will be used for roi selection
 
 #%% PROCESS_DATA
@@ -76,6 +78,4 @@ os.system('python ' + process_data_path
                 + ' --series_num ' + series_num
                 + ' --channel_num ' + channel_num)
 
-
-#%% Group analysis
 

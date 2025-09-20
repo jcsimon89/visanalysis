@@ -41,8 +41,8 @@ if __name__ == '__main__':
     parser.add_argument("--attach_metadata", nargs="?", help="True/False")
     parser.add_argument("--show_figs", nargs="?", help="True/False")
     parser.add_argument("--save_figs", nargs="?", help="True/False")
-    parser.add_argument("--series_num", nargs="?", help="series numbers for functional data")
-    parser.add_argument("--channel_num", nargs="?", help="channel number for each series")
+    parser.add_argument("--series_num", nargs="*", help="series numbers for functional data")
+    parser.add_argument("--channel_num", nargs="*", help="channel number for each series")
     args = parser.parse_args()
 
     experiment_file_directory = args.experiment_file_directory
@@ -82,12 +82,17 @@ if __name__ == '__main__':
 
     # series and channel numbers for functional data
 
-    # list of ints for series and channel numbers
-    # series_num = [[0, 1], [2, 3]] #list
-    series_num = [item.split(',') for item in args.series_num.split('/')]
-    series_num = [[int(i) for i in sublist] for sublist in series_num]
-    channel_num = [item.split(',') for item in args.channel_num.split('/')]
-    channel_num = [[int(i) for i in sublist] for sublist in channel_num]
+    # returns list of int pairs for series and channel numbers
+    # ex: takes [['0,1'],['2,3']] from system command line input and returns [[0, 1], [2, 3]]
+    print(type(args.series_num))
+    series_num = [[int(args.series_num[i].split(',')[0]),int(args.series_num[i].split(',')[1]),] for i,val in enumerate(args.series_num)]
+    print(series_num)
+    channel_num = [[int(args.channel_num[i].split(',')[0]),int(args.channel_num[i].split(',')[1]),] for i,val in enumerate(args.channel_num)]
+    print(channel_num)
+    # series_num = [item.split(',') for item in args.series_num.split('/')]
+    # series_num = [[int(i) for i in sublist] for sublist in series_num]
+    # channel_num = [item.split(',') for item in args.channel_num.split('/')]
+    # channel_num = [[int(i) for i in sublist] for sublist in channel_num]
 
     print('series_num = ' + str(series_num))
     print('channel_num = ' + str(channel_num))
