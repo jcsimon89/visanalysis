@@ -10,8 +10,8 @@ from visanalysis.util import plot_tools
 import matplotlib.pyplot as plt
 import os
 
-data_directory_cnt = os.path.join('C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS143_x_JS252')
-data_directory_test = os.path.join('C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS143_x_JS257')
+data_directory_cnt = os.path.join('C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS252')
+data_directory_test = os.path.join('C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS257')
 
 
 # %% Filter datafiles
