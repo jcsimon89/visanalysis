@@ -36,8 +36,12 @@ if __name__ == '__main__':
     parser.add_argument("--series_number", nargs="?", help="number as string for series to use for roi selection")
     parser.add_argument("--run_gui", nargs="?", help="True/False")
     parser.add_argument("--attach_metadata", nargs="?", help="True/False")
+    parser.add_argument("--roi_set_name", nargs="?", default='roi_set_name', help="name of roi set for analysis")
+    parser.add_argument("--response_set_name_prefix", nargs="?", default='mask', help="name of response set for analysis")
     args = parser.parse_args()
 
+    roi_set_name = args.roi_set_name
+    response_set_name_prefix = args.response_set_name_prefix
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
     series_number = args.series_number
@@ -60,7 +64,6 @@ if __name__ == '__main__':
     # hardcoded names
     experiment_file_name = 'fly.hdf5' #name of hdf5 file
     json_file_name = 'fly.json' #name of json file
-    roi_set_name = 'roi_set_name' #name you're going to save rois as in gui
 
     # extract info from fly.json 
 
@@ -206,7 +209,7 @@ if __name__ == '__main__':
         for current_channel in func_channels_num: #loop through channels
             current_channel = int(current_channel) # methods expect channel number to be datatype int
             ch = 'ch' + str(current_channel)
-            response_set_name = 'mask_' + ch
+            response_set_name = response_set_name_prefix + '_' + ch
 
             #derive image file name and path, (assuming we only do background subtraction on channel 2 (green))
 
