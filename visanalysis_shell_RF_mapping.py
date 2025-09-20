@@ -50,17 +50,21 @@ base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
 experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS252/fly_010' #string to folder containing fly.hdf5 file
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
+roi_set_name = 'roi_set_name' # name of roi group to be analyzed (default 'roi_set_name')
+response_set_name = 'mask' # name of response group to be analyzed (default 'mask')
+
 # process_data
 series_number_for_roi_selection = '1' #string 
-run_gui = 'True' #string "True" or "False", default = "False"
+run_gui = 'False' #string "True" or "False", default = "False"
 attach_metadata = 'True' #string "True" or "False", default = "False"
 
 # analyze_data
 show_figs = 'False' #string "True" or "False", default = "False"
 save_figs = 'True' #string "True" or "False", default = "False"
+dff = 'pre' #string "pre", "mean", or "none", default = "pre"
 
 # select_final_rois
-save_hdf5 = 'True'#string "True" or "False", default = "False"
+save_hdf5 = 'True' #string "True" or "False", default = "False"
 
 
 #%% PROCESS_DATA
@@ -73,7 +77,9 @@ os.system('python ' + process_data_path
                 + ' --rig ' + rig
                 + ' --series_number ' + series_number_for_roi_selection
                 + ' --run_gui ' + run_gui
-                + ' --attach_metadata ' + attach_metadata)
+                + ' --attach_metadata ' + attach_metadata
+                + ' --roi_set_name ' + roi_set_name
+                + ' --response_set_name_prefix ' + response_set_name)
 
 
 #%% ANALYZE_DATA RAW
@@ -87,19 +93,24 @@ os.system('python ' + analyze_data_path
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --dff ' + dff
+                + ' --response_set_name_prefix ' + response_set_name)
 
 #%% SELECT_GOOD_ROIS
 input_tag = ''
 output_tag = 'good'
 select_rois_path = str(os.path.join(base_path,'select_rois.py'))
+roi_parameter_names = 'ind' # parameter names for info store in json file (separated by spaces: 'ind center direction, ...'
 
 os.system('python ' + select_rois_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --save ' + save_hdf5
                 + ' --input_tag ' + input_tag
-                + ' --output_tag ' + output_tag)
+                + ' --output_tag ' + output_tag
+                + ' --response_set_name_prefix ' + response_set_name
+                + ' --roi_parameter_names ' + roi_parameter_names)
 
 
 #%% ANALYZE_DATA GOOD
@@ -113,19 +124,24 @@ os.system('python ' + analyze_data_path
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --dff ' + dff
+                + ' --response_set_name_prefix ' + response_set_name)
 
 #%% SELECT_FINAL_ROIS
 input_tag = 'good'
 output_tag = 'final'
-select_centers_path = str(os.path.join(base_path,'select_centers.py'))
+select_rois_path = str(os.path.join(base_path,'select_rois.py'))
+roi_parameter_names = 'ind center' # parameter names for info store in json file (separated by spaces: 'ind center direction, ...'
 
 os.system('python ' + select_rois_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --save ' + save_hdf5
                 + ' --input_tag ' + input_tag
-                + ' --output_tag ' + output_tag)
+                + ' --output_tag ' + output_tag
+                + ' --response_set_name_prefix ' + response_set_name
+                + ' --roi_parameter_names ' + roi_parameter_names)
 
 
 #%% ANALYZE_DATA FINAL
@@ -139,6 +155,8 @@ os.system('python ' + analyze_data_path
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
-                + ' --tag ' + tag)
+                + ' --tag ' + tag
+                + ' --dff ' + dff
+                + ' --response_set_name_prefix ' + response_set_name)
 # %%
 

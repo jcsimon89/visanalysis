@@ -35,10 +35,15 @@ if __name__ == '__main__':
     parser.add_argument("--show_figs", nargs="?", help="True/False")
     parser.add_argument("--save_figs", nargs="?", help="True/False")
     parser.add_argument("--tag", nargs="?", help="raw/final")
+    parser.add_argument("--dff", nargs="?", default = 'pre', help="dff method ('pre', 'mean', 'none')")
+    parser.add_argument("--response_set_name_prefix", nargs="?", default='mask', help="name of response set for analysis")
+
     args = parser.parse_args()
 
+    response_set_name_prefix = args.response_set_name_prefix
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
+    dff = args.dff
 
     if args.show_figs == 'True':
         show_figs = True
@@ -70,8 +75,7 @@ if __name__ == '__main__':
         experiment_file_name = 'fly_' + tag + '.hdf5'
 
     json_file_name = 'fly.json'
-    response_set_name_prefix = 'mask_' #once channel is added, will be of form mask_ch1 (these are names saved from process_data.py)
-
+    
     # extract info from fly.json 
 
     with open(pathlib.Path(experiment_file_directory, json_file_name), 'r') as file:
@@ -190,7 +194,7 @@ if __name__ == '__main__':
         for current_channel in func_channels_num: #loop through channels
             current_channel = int(current_channel) # methods expect channel number to be datatype int            
             ch = 'ch' + str(current_channel)
-            response_set_name = response_set_name_prefix + ch
+            response_set_name = response_set_name_prefix + '_' + ch
             
             ## Save ROIS AND RESPONSES for each series and channel to roi_data
             
@@ -199,7 +203,7 @@ if __name__ == '__main__':
             #roi_data: dict (key = sn,ch)
             #of dicts (key = roi_response/roi_image/roi_mask/epoch_response/time_vector)
             #NOTE:roi_response is a list where each entry is a roi
-            roi_data[sn,ch] = ID.getRoiResponses(response_set_name, roi_prefix='aligned')
+            roi_data[sn,ch] = ID.getRoiResponses(response_set_name, roi_prefix='aligned', dff=dff)
 
             # check stimulus timing from photodiode trace
             
@@ -312,17 +316,17 @@ if __name__ == '__main__':
     print('search stim series: ' + search_series)
 
     mapping_series = 'sn' + series_num[1] #assume second series is mapping stim
+    mapping_series_num = series_num[1]
 
     # load correct center locations if necessary
 
     if tag == 'final':
-        roi_centers_json_file_name = 'final_roi_centers.json'
+        plug.updateImagingDataObject(experiment_file_directory, 
+                                    experiment_file_name,
+                                    mapping_series_num)
         
-        #extract center locations for each roi
-        with open(pathlib.Path(experiment_file_directory, roi_centers_json_file_name), 'r') as file:
-            roi_centers_final_json = json.load(file)
-        roi_centers = [int(x.split(',')[-1]) for x in roi_centers_final_json['roi_centers']]
-         # keep second elements of list of tuples (roi_ind, center_ind)
+        ID = plug.ImagingDataObject
+        roi_centers = ID.getRoiParameters(roi_set_name=response_set_name_prefix, parameter='center', roi_prefix='aligned')
         print('roi_centers: ' + repr(roi_centers))
 
     # make raw fig save directory (if it doesn't exist)
