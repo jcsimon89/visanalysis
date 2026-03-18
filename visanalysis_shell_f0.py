@@ -41,13 +41,23 @@ base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
 #experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS252/fly_012' #string to folder containing fly.hdf5 file
 #with whole slice roi
 #experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS252/fly_013'
-experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS252/fly_014'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS252/fly_014'
 #experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS257/fly_007'
 #experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS257/fly_008'
 #experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS257/fly_009'
 #experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS258/fly_001'
 #experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS258/fly_002'
 #experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS258/fly_003'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS252/fly_016'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS252/fly_017'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS252/fly_018'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS257/fly_005'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS257/fly_006'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS257/fly_007'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS258/fly_001'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS258/fly_002'
+#experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS258/fly_003'
+experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS252/fly_012'
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
 # process_data
