@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import os
 import pickle
 import numpy as np
-
+from scipy.stats import mannwhitneyu, ks_2samp
 
 # %% initialize
 
@@ -19,16 +19,15 @@ data_directory = {} #dictionary with keys as condition names and values as paths
 filenames = {} #dictionary with keys as condition names and values as lists of pkl filenames
 voxel_mean = {} #dictionary with keys as condition names and values as dictionaries of channel:voxel_mean arrays
 f0_data = {} #dictionary with keys as (condition name, filename) tuples and values as loaded f0_data dictionaries
-driver_fly = 'JS256'
-keys = ['dual sensor', 'pde', 'pde*']
-effector_fly = ['JS252', 'JS257', 'JS258']
+driver_fly = 'JS140'
+keys = ['eCAP-A', 'eCAP-A*']#, 'none']#['eCAP-A', 'eCAP-A*']##['no eCAP', 'eCAP-A*']#['dual sensor', 'pde', 'pde*']
+effector_fly = ['JS257', 'JS258']#, 'JS252']#['JS257', 'JS258']#['JS252', 'JS258']#
 
 for ind, key in enumerate(keys):
     data_directory[key] = os.path.join('C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/{}_x_{}'.format(driver_fly,effector_fly[ind]))
     print('data_directory[{}]: {}'.format(key,data_directory[key]))
 
 # %% Filter and load datafiles
-
 
 
 for key in keys:
@@ -39,6 +38,7 @@ for key in keys:
     print('series[{}]: '.format(key) + str(filenames[key]))
 
 # %% Load datafiles
+
 
 for key in keys:
     for filename in filenames[key]:
@@ -55,11 +55,20 @@ for key in keys:
         print('loaded voxel_mean from file: {}'.format(filename))
     for ch in voxel_mean[key]:
         print('voxel_mean[{}][{}] shape: {}'.format(key,ch,voxel_mean[key][ch].shape))
-
+        print('data format: {}'.format(type(voxel_mean[key][ch])))
+        
 
 
 # %% Plot group results by condition
+color = {'none': 'cyan', 'eCAP-A':'orange', 'eCAP-A*':'lightgreen'}
 
+shared_analysis.plotF0ByConditionComparison(voxel_mean,color,quiet=False)
 
-shared_analysis.plotF0ByConditionComparison(voxel_mean,quiet=False)
-
+for key1 in keys:
+    for key2 in keys:
+        if key1 != key2:
+            for ch in voxel_mean[key1].keys():
+                print('Comparing {} vs {}, channel {}'.format(key1,key2,ch))
+                #h,p = mannwhitneyu(voxel_mean[key1][ch],voxel_mean[key2][ch])
+                h,p=ks_2samp(voxel_mean[key1][ch],voxel_mean[key2][ch])
+                print('p-value: {}'.format(p))
