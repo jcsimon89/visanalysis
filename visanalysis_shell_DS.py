@@ -45,14 +45,14 @@ import h5py
 
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
-experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS144_x_JS252/fly_002' #string to folder containing fly.hdf5 file
+experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS144_x_JS252/fly_003' #string to folder containing fly.hdf5 file
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
 # process_data
 series_number_for_roi_selection = '1' #string 
-run_gui = 'True' #string "True" or "False", default = "False"
-attach_metadata = 'False' #string "True" or "False", default = "False"
-roi_set_name = 'LobulaPlate' #Lobula or LobulaPlate for T5
+run_gui = 'False' #string "True" or "False", default = "False"
+attach_metadata = 'True' #string "True" or "False", default = "False"
+roi_set_name = 'Lobula' #Lobula or LobulaPlate for T5
 #roi_set_name = 'LobulaPlate'
 response_set_name_prefix = roi_set_name
 
@@ -97,6 +97,7 @@ os.system('python ' + analyze_data_path
 input_tag = ''
 output_tag = 'final'
 select_rois_path = str(os.path.join(base_path,'select_rois.py'))
+roi_parameter_names = 'ind' # parameter names for info store in json file (separated by spaces: 'ind center direction, ...'
 
 os.system('python ' + select_rois_path
                 + ' --experiment_file_directory ' + experiment_file_directory
@@ -104,7 +105,8 @@ os.system('python ' + select_rois_path
                 + ' --save ' + save_hdf5
                 + ' --input_tag ' + input_tag
                 + ' --output_tag ' + output_tag
-                + ' --response_set_name_prefix '+ response_set_name_prefix)
+                + ' --response_set_name_prefix '+ response_set_name_prefix
+                + ' --roi_parameter_names ' + roi_parameter_names)
 
 
 #%% ANALYZE_DATA Final
@@ -112,6 +114,7 @@ os.system('python ' + select_rois_path
 
 tag = 'final' #string "raw","good","final"
 analyze_data_path = str(os.path.join(base_path,'analyze_data_DS.py'))
+ds_tag = 'False'# 'True'/'False' (default 'False') do direction selective analysis?
 
 os.system('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
@@ -119,5 +122,8 @@ os.system('python ' + analyze_data_path
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs
                 + ' --tag ' + tag
-                + ' --response_set_name_prefix '+ response_set_name_prefix)
+                + ' --response_set_name_prefix '+ response_set_name_prefix
+                + ' --ds_tag '+ ds_tag)
 
+
+# %%
