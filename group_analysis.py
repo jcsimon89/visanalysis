@@ -10,7 +10,7 @@ from visanalysis.util import plot_tools
 import matplotlib.pyplot as plt
 import os
 
-data_directory = os.path.join('C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS252')
+data_directory = os.path.join('C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS257')
 
 
 # %% Filter datafiles
@@ -45,6 +45,12 @@ short_flash_series = shared_analysis.filterDataFiles(data_directory=data_directo
                     quiet=True,
                     recursive=True)
 
+
+# # filter flies
+# search_series = search_series[:-3]
+# long_flash_series = long_flash_series[:-3]
+# short_flash_series = short_flash_series[:-3]
+
 print('Search Series: ')
 for series in search_series:
     print('file_name - ' + str(series['file_name']))
@@ -59,6 +65,7 @@ print('Short Flash Series: ')
 for series in short_flash_series:
     print('file_name - ' + str(series['file_name']))
     print('series - ' + str(series['series']))
+
 
 # %% Plot group results by condition
 search_IDs=[]
