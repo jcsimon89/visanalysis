@@ -44,6 +44,7 @@ if __name__ == '__main__':
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
     dff = args.dff
+    response_ylabel = 'F' if dff == 'none' else r'$\Delta F/F_0$'
 
     if args.show_figs == 'True':
         show_figs = True
@@ -404,7 +405,7 @@ if __name__ == '__main__':
         for u_ind, up in enumerate(unique_intensity_values[sn]):
             ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
             ax[ch_ind, u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
-            ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
+            ax[ch_ind, u_ind].set_ylabel('Mean Response ({})'.format(response_ylabel))
             ax[ch_ind, u_ind].set_xlabel('Time (s)')
             ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
     plt.suptitle("search stimulus, mean response, all {} rois".format(tag))
@@ -432,7 +433,7 @@ if __name__ == '__main__':
             for u_ind, up in enumerate(unique_intensity_values[sn]):
                 ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
                 ax[ch_ind, u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
-                ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
+                ax[ch_ind, u_ind].set_ylabel('Mean Response ({})'.format(response_ylabel))
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
         plt.suptitle("search stimulus, mean response, {} roi {} ".format(tag,roi_ind))
@@ -521,7 +522,7 @@ if __name__ == '__main__':
                             if current_radius == min_radius:
                                 ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T, label='center index: {}'.format(current_center_index))
                                 ax[ch_ind, intensity_ind].legend(loc='upper right')
-                                ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
+                                ax[ch_ind, intensity_ind].set_ylabel('Response ({})'.format(response_ylabel))
                                 ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
                                 ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
 
@@ -563,7 +564,7 @@ if __name__ == '__main__':
                             if current_center_index == center_index:
                                 ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T, label='radius: {}'.format(current_radius))
                                 ax[ch_ind, intensity_ind].legend(loc='upper right')
-                                ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
+                                ax[ch_ind, intensity_ind].set_ylabel('Response ({})'.format(response_ylabel))
                                 ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
                                 ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
 
@@ -619,7 +620,7 @@ if __name__ == '__main__':
                 for radius_ind, current_radius in enumerate(unique_radius_values[sn]):
                     ax[ch_ind, intensity_ind].plot(roi_data[sn,ch]['time_vector'], np.mean(on_center_mean_response[:, ch_ind, intensity_ind, radius_ind, :], axis=0).T, label='radius: {}'.format(current_radius))
                     ax[ch_ind, intensity_ind].legend(loc='upper right')
-                    ax[ch_ind, intensity_ind].set_ylabel('Response (dF/F)')
+                    ax[ch_ind, intensity_ind].set_ylabel('Response ({})'.format(response_ylabel))
                     ax[ch_ind, intensity_ind].set_xlabel('Time (s)')
                     ax[ch_ind, intensity_ind].set_title('Ch{}, Intensity = {}'.format(current_channel,current_intensity))
             plt.suptitle('On-center mean responses')

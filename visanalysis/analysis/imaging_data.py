@@ -837,12 +837,13 @@ class ImagingDataObject:
             ]
 
         if return_erm:
-            time_vector, response_matrix = self.getEpochResponseMatrix(
+            time_vector, response_matrix, time_vector_by_epoch = self.getEpochResponseMatrix(
                 np.vstack(roi_data.get("roi_response")),
                 dff=dff
             )
             roi_data["epoch_response"] = response_matrix
             roi_data["time_vector"] = time_vector
+            roi_data["time_vector_by_epoch"] = time_vector_by_epoch
 
         return roi_data
     
@@ -900,6 +901,7 @@ class ImagingDataObject:
                 response_matrix (ndarray): response for each roi in each epoch.
                     shape = (rois, epochs, frames per longest epoch)
                     In the event that different epochs have different lenths, shorter epochs will be padded with nan in the response+matrix
+                time_vector_by_epoch (list of 1d arrays): per-epoch time vectors, each with length = epoch_frames[i]
         """
         def get_image_inds(epoch_index):
             '''find indices of image (volume) that fall within epoch given by [epoch_index] '''
@@ -944,6 +946,12 @@ class ImagingDataObject:
         max_epoch_frames = np.max(epoch_frames)
         time_vector = np.arange(0, max_epoch_frames) * response_timing["sample_period"] # sec
 
+        # Build a separate time vector for each epoch (each may have a different length)
+        time_vector_by_epoch = [
+            np.arange(0, epoch_frames[idx]) * response_timing["sample_period"]
+            for idx in range(no_trials)
+        ]
+
         # Note response_matrix is padded by nan out to longest epoch length. Different epoch lengths may result in a jagged array with nans backfilled
         response_matrix = np.empty(shape=(no_regions, no_trials, max_epoch_frames), dtype=float)
         response_matrix[:] = np.nan
@@ -970,8 +978,74 @@ class ImagingDataObject:
                 
             response_matrix[:, idx, :epoch_frames[idx]] = new_epoch_response[:, :epoch_frames[idx]]                
 
-        return time_vector, response_matrix
+        return time_vector, response_matrix, time_vector_by_epoch
 
+    def getBinnedEpochAverage(self, epoch_response, time_vector_by_epoch, bin_frequency):
+        """
+        Bin epoch responses onto a common time grid and average across epochs.
+
+        Useful when epochs have different durations and you want to plot the
+        mean response on a single, uniformly-spaced time axis.
+
+        Params:
+            epoch_response: ndarray, shape = (rois, epochs, max_time).
+                The epoch response matrix (may contain NaN padding for shorter epochs).
+            time_vector_by_epoch: list of 1d arrays.
+                Per-epoch time vectors as returned by getEpochResponseMatrix / getRoiResponses.
+            bin_frequency: float, Hz.
+                Temporal frequency for the output time grid (e.g. 10 -> 0.1 s bins).
+
+        Returns:
+            bin_centers (1d array): center time of each bin (sec)
+            mean_response (ndarray): mean across epochs, shape = (rois, n_bins)
+            sem_response (ndarray): SEM across epochs, shape = (rois, n_bins)
+            binned_responses (ndarray): per-epoch binned data, shape = (rois, epochs, n_bins).
+                NaN where an epoch has no data in a bin.
+        """
+        bin_width = 1.0 / bin_frequency  # seconds
+
+        # Determine the maximum time across all epochs
+        max_time = max(tv[-1] for tv in time_vector_by_epoch if len(tv) > 0)
+
+        # Build bin edges and centers
+        bin_edges = np.arange(0, max_time + bin_width, bin_width)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+        n_bins = len(bin_centers)
+
+        n_rois = epoch_response.shape[0]
+        n_epochs = epoch_response.shape[1]
+
+        # Pre-allocate with NaN (NaN = epoch has no data in this bin)
+        binned_responses = np.full((n_rois, n_epochs, n_bins), np.nan)
+
+        for epoch_idx in range(n_epochs):
+            tv = time_vector_by_epoch[epoch_idx]
+            n_valid = len(tv)
+            if n_valid == 0:
+                continue
+
+            # np.digitize assigns each timepoint to a bin index (1-based)
+            bin_indices = np.digitize(tv, bin_edges) - 1  # convert to 0-based
+            # Clamp last edge into final bin
+            bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+            for bin_idx in range(n_bins):
+                in_bin = np.where(bin_indices == bin_idx)[0]
+                if len(in_bin) > 0:
+                    binned_responses[:, epoch_idx, bin_idx] = np.nanmean(
+                        epoch_response[:, epoch_idx, in_bin], axis=1
+                    )
+
+        # Average across epochs
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            n_contributing = np.sum(~np.isnan(binned_responses), axis=1)  # (rois, n_bins)
+            mean_response = np.nanmean(binned_responses, axis=1)  # (rois, n_bins)
+            sem_response = np.nanstd(binned_responses, axis=1) / np.sqrt(
+                np.maximum(n_contributing, 1)
+            )
+
+        return bin_centers, mean_response, sem_response, binned_responses
 
 
     # # # #  # # # # # # # # # CONVENIENCE METHODS # # # # # # # # # # # # # # # # # # # # # # # # # #

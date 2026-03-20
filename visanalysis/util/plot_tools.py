@@ -138,3 +138,104 @@ def cleanAxes(ax):
     ax.spines['right'].set_visible(False)
     ax.get_xaxis().set_ticks([])
     ax.get_yaxis().set_ticks([])
+
+
+def plotBinnedEpochResponse(ImagingDataObject, roi_data, bin_frequency,
+                            roi_inds=None,
+                            stim_timing=None,
+                            dff='pre',
+                            color='k', fill_color=None, fill_alpha=0.3,
+                            title=None, ylabel=None, xlabel='Time (s)',
+                            figsize=None, ax=None):
+    """
+    Plot mean ± SEM response across epochs using binned time vectors.
+
+    Calls ImagingDataObject.getBinnedEpochAverage() to bin the epoch response
+    matrix onto a common time grid at the specified frequency, then plots
+    the mean trace with SEM shading for each requested ROI.
+
+    Params:
+        ImagingDataObject: ImagingDataObject instance (provides getBinnedEpochAverage)
+        roi_data: dict as returned by getRoiResponses (must contain
+            'epoch_response' and 'time_vector_by_epoch')
+        bin_frequency: float, Hz. Temporal frequency for the output time grid.
+        roi_inds: list of int or None. Which ROIs to plot. None = all ROIs.
+        stim_timing: dict with 'pre_time' and 'stim_time' (sec) to shade the
+            stimulus window, or None to skip.
+        color: line color (any matplotlib color spec)
+        fill_color: SEM fill color. None defaults to same as line color.
+        fill_alpha: float, transparency of SEM fill (0-1)
+        title: str or None, figure title
+        ylabel: str, y-axis label
+        xlabel: str, x-axis label
+        figsize: tuple or None, figure size (width, height)
+        ax: matplotlib Axes or array of Axes. If None, a new figure is created.
+
+    Returns:
+        fh: figure handle (None if ax was provided)
+        axes: array of Axes used
+        bin_centers: 1d array, bin center times (sec)
+        mean_response: ndarray, shape = (n_rois, n_bins)
+        sem_response: ndarray, shape = (n_rois, n_bins)
+    """
+    # Auto-set ylabel based on dff mode if not explicitly provided
+    if ylabel is None:
+        if dff == 'none':
+            ylabel = 'F'
+        else:
+            ylabel = r'$\Delta F/F_0$'
+
+    # Compute binned average
+    bin_centers, mean_response, sem_response, _ = ImagingDataObject.getBinnedEpochAverage(
+        roi_data['epoch_response'],
+        roi_data['time_vector_by_epoch'],
+        bin_frequency
+    )
+
+    n_rois = mean_response.shape[0]
+    if roi_inds is None:
+        roi_inds = list(range(n_rois))
+
+    if fill_color is None:
+        fill_color = color
+
+    # Create figure if no axes provided
+    fh = None
+    if ax is None:
+        if figsize is None:
+            figsize = (8, 3 * len(roi_inds))
+        fh, ax = plt.subplots(len(roi_inds), 1, figsize=figsize,
+                              constrained_layout=True, squeeze=False)
+        ax = ax[:, 0]  # flatten to 1D array of axes
+
+    if not hasattr(ax, '__len__'):
+        ax = [ax]
+
+    for plot_ind, roi_ind in enumerate(roi_inds):
+        cur_ax = ax[plot_ind]
+        y = mean_response[roi_ind, :]
+        err = sem_response[roi_ind, :]
+
+        cur_ax.plot(bin_centers, y, color=color, linewidth=1.5)
+        cur_ax.fill_between(bin_centers, y - err, y + err,
+                            color=fill_color, alpha=fill_alpha)
+
+        # Stimulus timing overlay
+        if stim_timing is not None:
+            pre = stim_timing.get('pre_time', 0)
+            stim = stim_timing.get('stim_time', 0)
+            cur_ax.axvspan(pre, pre + stim, color='gray', alpha=0.15)
+
+        cur_ax.set_ylabel(ylabel)
+        cur_ax.set_xlabel(xlabel)
+        if len(roi_inds) > 1:
+            cur_ax.set_title('ROI {}'.format(roi_ind))
+
+    if title is not None:
+        if fh is not None:
+            fh.suptitle(title)
+        else:
+            ax[0].set_title(title)
+
+    return fh, ax, bin_centers, mean_response, sem_response
+
