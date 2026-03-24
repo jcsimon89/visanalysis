@@ -232,7 +232,7 @@ if __name__ == '__main__':
                     h5w.close()
                 h5r.close()
         else:
-            with h5py.File(hdf5_save_path, 'w') as h5w:
+            with h5py.File(hdf5_save_path, 'r+') as h5w:
                 for current_series in series_num: #loop through all series
                     sn = 'sn' + current_series
                     for current_channel in func_channels_num: #loop through channels
