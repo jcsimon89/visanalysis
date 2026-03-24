@@ -845,6 +845,23 @@ class ImagingDataObject:
             roi_data["time_vector"] = time_vector
             roi_data["time_vector_by_epoch"] = time_vector_by_epoch
 
+        # Compute Z-plane offsets for each ROI
+        try:
+            frame_offsets = self.getVolumeFrameOffsets()
+            if len(frame_offsets) > 1 and "roi_mask" in roi_data:
+                roi_z_offsets = np.zeros(len(roi_data["roi_response"]))
+                for roi_num in range(len(roi_data["roi_response"])):
+                    mask = roi_data["roi_mask"][roi_num]
+                    if np.any(mask):
+                        # Find the first Z-slice where the mask exists (axis 0=Y, 1=X, 2=Z)
+                        z_idx = np.where(np.any(mask, axis=(0, 1)))[0][0]
+                        z_idx = min(z_idx, len(frame_offsets) - 1)
+                        roi_z_offsets[roi_num] = frame_offsets[z_idx]
+                roi_data["roi_z_offsets"] = roi_z_offsets
+        except Exception:
+            # If not volumetric or if mask parsing fails, safely ignore
+            pass
+
         return roi_data
     
     def getRoiMasks(
@@ -946,11 +963,19 @@ class ImagingDataObject:
         max_epoch_frames = np.max(epoch_frames)
         time_vector = np.arange(0, max_epoch_frames) * response_timing["sample_period"] # sec
 
-        # Build a separate time vector for each epoch (each may have a different length)
-        time_vector_by_epoch = [
-            np.arange(0, epoch_frames[idx]) * response_timing["sample_period"]
-            for idx in range(no_trials)
-        ]
+        # Build a separate time vector for each epoch using actual frame timestamps
+        # (preserves natural jitter between imaging frames and epoch onset)
+        time_vector_by_epoch = []
+        for idx in range(no_trials):
+            current_trial_inds = get_image_inds(idx)
+            usable_frames = min(len(current_trial_inds), epoch_frames[idx])
+            
+            if usable_frames > 0:
+                actual_times = response_timing["time_vector"][current_trial_inds[:usable_frames]] - epoch_start_times[idx]
+                time_vector_by_epoch.append(actual_times)
+            else:
+                warnings.warn('time_vector_by_epoch SKIPPING TRIAL {}: No frames found'.format(idx))
+                time_vector_by_epoch.append(np.array([]))
 
         # Note response_matrix is padded by nan out to longest epoch length. Different epoch lengths may result in a jagged array with nans backfilled
         response_matrix = np.empty(shape=(no_regions, no_trials, max_epoch_frames), dtype=float)
@@ -967,16 +992,14 @@ class ImagingDataObject:
                 warnings.warn('SKIPPING TRIAL {}: No frames collected during trial'.format(idx))
                 continue
 
-            if len(current_trial_inds) < epoch_frames[idx]:
-                warnings.warn('SKIPPING TRIAL {}: Expected {} frames, found {} '.format(idx, epoch_frames[idx], len(current_trial_inds)))
-                continue
+            usable_frames = min(len(current_trial_inds), epoch_frames[idx])
 
-            new_epoch_response = region_response[:, current_trial_inds]
+            new_epoch_response = region_response[:, current_trial_inds[:usable_frames]]
 
             if dff != 'none':
                 new_epoch_response = get_dff(new_epoch_response, idx, dff=dff)
                 
-            response_matrix[:, idx, :epoch_frames[idx]] = new_epoch_response[:, :epoch_frames[idx]]                
+            response_matrix[:, idx, :usable_frames] = new_epoch_response[:, :usable_frames]                
 
         return time_vector, response_matrix, time_vector_by_epoch
 

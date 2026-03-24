@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from scipy.interpolate import interp1d
 import scipy.stats
 import seaborn as sns
+from typing import Any
 
 
 def matchQuery(epoch_parameters, query):
@@ -65,9 +66,9 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
     bin_width = 1.0 / bin_frequency
 
     # ---- Step 1: Collect data from all ImagingDataObjects ----
-    roi_data = {}
-    unique_parameter_values = None
-    epoch_inds_by_exp = {}
+    roi_data: dict[Any, Any] = {}  # keyed by (exp_ind, ch_ind)
+    epoch_inds_by_exp: dict[int, Any] = {}
+    all_parameter_values: list = []
 
     for exp_ind, ImagingData in enumerate(ImagingDataObjects):
         fly_metadata = ImagingData.getSubjectMetadata()
@@ -84,11 +85,13 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
             roi_data[exp_ind, ch_ind] = ImagingData.getRoiResponses(ch_name, roi_prefix=roi_prefix, dff=dff)
 
         # Get epoch groupings (same for all channels within an experiment)
-        upv, ei = ImagingData.getEpochGroupingsByParameters(parameter_key=condition)
-        epoch_inds_by_exp[exp_ind] = ei
-        if unique_parameter_values is None:
-            unique_parameter_values = upv
+        upv, epoch_indices = ImagingData.getEpochGroupingsByParameters(parameter_key=condition)
+        epoch_inds_by_exp[exp_ind] = epoch_indices
+        all_parameter_values.extend(upv)
         run_parameters = ImagingData.getRunParameters()
+
+    # Deduplicate and sort (same idiom as getEpochGroupingsByParameters)
+    unique_parameter_values = sorted([list(s) for s in set(tuple(pv) for pv in all_parameter_values)])
 
     n_conditions = len(unique_parameter_values)
     n_channels = len(ch_names)
@@ -97,9 +100,10 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
     # Determine global max time for bin edges
     all_max_times = []
     for exp_ind in range(len(ImagingDataObjects)):
-        for tv in roi_data[exp_ind, 0]['time_vector_by_epoch']:
-            if len(tv) > 0:
-                all_max_times.append(tv[-1])
+        time_vector_list: list[np.ndarray] = roi_data[exp_ind, 0]['time_vector_by_epoch']
+        for time_vector in time_vector_list:
+            if time_vector.size > 0:
+                all_max_times.append(time_vector[-1])
     global_max_time = max(all_max_times)
     bin_edges = np.arange(0, global_max_time + bin_width, bin_width)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
@@ -107,53 +111,62 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
 
     # For each condition x channel: collect binned responses across all experiments and ROIs
     # Result shape per condition x channel: (n_rois_total, n_bins)
-    binned_by_condition = {}  # key: (cond_ind, ch_ind), value: list of 1D arrays (one per roi)
+    binned_by_condition_lists: dict[Any, list[np.ndarray]] = {}  # key: (cond_ind, ch_ind), value: list of 1D arrays (one per roi)
 
     for cond_ind in range(n_conditions):
         for ch_ind in range(n_channels):
-            binned_by_condition[cond_ind, ch_ind] = []
+            binned_by_condition_lists[cond_ind, ch_ind] = []
 
     for exp_ind in range(len(ImagingDataObjects)):
-        epoch_response = roi_data[exp_ind, 0]['epoch_response']  # (rois, epochs, max_time)
-        time_vector_by_epoch = roi_data[exp_ind, 0]['time_vector_by_epoch']
+        epoch_response = roi_data[exp_ind, 0]['epoch_response']  # pyre-ignore[29]  # (rois, epochs, max_time)
+        time_vector_by_epoch = roi_data[exp_ind, 0]['time_vector_by_epoch']  # pyre-ignore[29]
         n_rois = epoch_response.shape[0]
 
         for cond_ind in range(n_conditions):
-            trial_inds = epoch_inds_by_exp[exp_ind][cond_ind]
+            trial_inds = epoch_inds_by_exp[exp_ind][cond_ind]  # pyre-ignore[29]
             # Clamp to available trials
             trial_inds = trial_inds[trial_inds < epoch_response.shape[1]]
             if len(trial_inds) == 0:
                 continue
 
             for ch_ind in range(n_channels):
-                ch_epoch_response = roi_data[exp_ind, ch_ind]['epoch_response']
-                ch_tvbe = roi_data[exp_ind, ch_ind]['time_vector_by_epoch']
+                ch_epoch_response: np.ndarray = roi_data[exp_ind, ch_ind]['epoch_response']
+                ch_time_vector_by_epoch: list[np.ndarray] = roi_data[exp_ind, ch_ind]['time_vector_by_epoch']
+                roi_z_offsets = roi_data[exp_ind, ch_ind].get('roi_z_offsets', np.zeros(ch_epoch_response.shape[0]))
 
                 for roi_ind in range(ch_epoch_response.shape[0]):
                     # Bin this ROI's matching trials, then average across trials per bin
                     trial_binned = np.full((len(trial_inds), n_bins), np.nan)
-                    for t_i, trial_idx in enumerate(trial_inds):
-                        tv = ch_tvbe[trial_idx]
-                        n_valid = len(tv)
+                    for trial, trial_idx in enumerate(trial_inds):
+                        time_vector = ch_time_vector_by_epoch[trial_idx] + roi_z_offsets[roi_ind]
+                        n_valid = len(time_vector)
                         if n_valid == 0:
                             continue
-                        bin_indices = np.clip(np.digitize(tv, bin_edges) - 1, 0, n_bins - 1)
+                        bin_indices = np.clip(np.digitize(time_vector, bin_edges) - 1, 0, n_bins - 1)
                         for b in range(n_bins):
                             in_bin = np.where(bin_indices == b)[0]
                             if len(in_bin) > 0:
-                                trial_binned[t_i, b] = np.nanmean(ch_epoch_response[roi_ind, trial_idx, in_bin])
+                                trial_binned[trial, b] = np.nanmean(ch_epoch_response[roi_ind, trial_idx, in_bin])  # type: ignore[arg-type]
 
                     # Average across trials for this ROI -> 1D (n_bins,)
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore", category=RuntimeWarning)
                         roi_mean = np.nanmean(trial_binned, axis=0)
-                    binned_by_condition[cond_ind, ch_ind].append(roi_mean)
+                        
+                        valid_trial_counts = np.sum(~np.isnan(trial_binned), axis=0)
+                        # Threshold the bin: If it has data from fewer than 50% of the peak trial count, set to NaN
+                        if np.max(valid_trial_counts) > 0:
+                            threshold = np.max(valid_trial_counts) * 0.5
+                            roi_mean[valid_trial_counts < threshold] = np.nan
+                            
+                    binned_by_condition_lists[cond_ind, ch_ind].append(roi_mean)  # pyre-ignore[29]
 
     # Stack into arrays: (n_rois_total, n_bins)
+    binned_by_condition: dict[tuple, np.ndarray] = {}
     for cond_ind in range(n_conditions):
         for ch_ind in range(n_channels):
-            if len(binned_by_condition[cond_ind, ch_ind]) > 0:
-                binned_by_condition[cond_ind, ch_ind] = np.vstack(binned_by_condition[cond_ind, ch_ind])
+            if len(binned_by_condition_lists[cond_ind, ch_ind]) > 0:  # pyre-ignore[29]
+                binned_by_condition[cond_ind, ch_ind] = np.vstack(binned_by_condition_lists[cond_ind, ch_ind])  # pyre-ignore[29]
             else:
                 binned_by_condition[cond_ind, ch_ind] = np.empty((0, n_bins))
 
@@ -189,22 +202,22 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
                 error = scipy.stats.sem(data, axis=0, nan_policy='omit')
 
             # Fig 1: individual traces
-            ax1[ch_ind, cond_ind].plot(bin_centers, data.T, alpha=0.5)
-            ax1[ch_ind, cond_ind].set_title('{}, {} = {}'.format(ch_labels[ch_ind], condition, cond_value))
-            ax1[ch_ind, cond_ind].set_ylabel(response_ylabel)
-            ax1[ch_ind, cond_ind].set_xlabel('Time (s)')
-            ax1[ch_ind, cond_ind].axvspan(run_parameters['pre_time'],
+            ax1[ch_ind, cond_ind].plot(bin_centers, data.T, alpha=0.5)  # pyre-ignore[29]
+            ax1[ch_ind, cond_ind].set_title('{}, {} = {}'.format(ch_labels[ch_ind], condition, cond_value))  # pyre-ignore[29]
+            ax1[ch_ind, cond_ind].set_ylabel(response_ylabel)  # pyre-ignore[29]
+            ax1[ch_ind, cond_ind].set_xlabel('Time (s)')  # pyre-ignore[29]
+            ax1[ch_ind, cond_ind].axvspan(run_parameters['pre_time'],  # pyre-ignore[29]
                                           run_parameters['pre_time'] + run_parameters['stim_time'],
                                           color='gray', alpha=0.2)
 
             # Fig 2: mean ± SEM
-            ax2[ch_ind, cond_ind].plot(bin_centers, y, color='k')
-            ax2[ch_ind, cond_ind].fill_between(bin_centers, y - error, y + error,
+            ax2[ch_ind, cond_ind].plot(bin_centers, y, color='k')  # pyre-ignore[29]
+            ax2[ch_ind, cond_ind].fill_between(bin_centers, y - error, y + error,  # pyre-ignore[29]
                                                color=ch_colors[ch_ind], alpha=0.4)
-            ax2[ch_ind, cond_ind].set_title('{}, {} = {}'.format(ch_labels[ch_ind], condition, cond_value))
-            ax2[ch_ind, cond_ind].set_ylabel(response_ylabel)
-            ax2[ch_ind, cond_ind].set_xlabel('Time (s)')
-            ax2[ch_ind, cond_ind].axvspan(run_parameters['pre_time'],
+            ax2[ch_ind, cond_ind].set_title('{}, {} = {}'.format(ch_labels[ch_ind], condition, cond_value))  # pyre-ignore[29]
+            ax2[ch_ind, cond_ind].set_ylabel(response_ylabel)  # pyre-ignore[29]
+            ax2[ch_ind, cond_ind].set_xlabel('Time (s)')  # pyre-ignore[29]
+            ax2[ch_ind, cond_ind].axvspan(run_parameters['pre_time'],  # pyre-ignore[29]
                                           run_parameters['pre_time'] + run_parameters['stim_time'],
                                           color='gray', alpha=0.2)
 
@@ -215,16 +228,81 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 y = np.nanmean(data, axis=0)
                 error = scipy.stats.sem(data, axis=0, nan_policy='omit')
-            ax3[0, cond_ind].plot(bin_centers, y, color='k')
-            ax3[0, cond_ind].fill_between(bin_centers, y - error, y + error,
+            ax3[0, cond_ind].plot(bin_centers, y, color='k')  # pyre-ignore[29]
+            ax3[0, cond_ind].fill_between(bin_centers, y - error, y + error,  # pyre-ignore[29]
                                           color=ch_colors[ch_ind], alpha=0.4)
-        ax3[0, cond_ind].set_title('{} = {}'.format(condition, cond_value))
-        ax3[0, cond_ind].set_ylabel(response_ylabel)
-        ax3[0, cond_ind].set_xlabel('Time (s)')
-        ax3[0, cond_ind].axvspan(run_parameters['pre_time'],
+        ax3[0, cond_ind].set_title('{} = {}'.format(condition, cond_value))  # pyre-ignore[29]
+        ax3[0, cond_ind].set_ylabel(response_ylabel)  # pyre-ignore[29]
+        ax3[0, cond_ind].set_xlabel('Time (s)')  # pyre-ignore[29]
+        ax3[0, cond_ind].axvspan(run_parameters['pre_time'],  # pyre-ignore[29]
                                  run_parameters['pre_time'] + run_parameters['stim_time'],
                                  color='gray', alpha=0.2)
 
+
+def plotTrialCountsByCondition(ImagingDataObjects, ch_names, condition, bin_frequency, roi_prefix='rois', dff='pre'):
+    """
+    Plots the number of valid trials contributing to each time bin, for each condition.
+    Useful for debugging trial dropout artifacts at the ends of epochs.
+    """
+    epoch_inds_by_exp = {}
+    all_parameter_values = []
+    roi_data = {}
+
+    for exp_ind, ImagingData in enumerate(ImagingDataObjects):
+        # We just need time vectors, so ch_names[0] is fine.
+        roi_data[exp_ind] = ImagingData.getRoiResponses(ch_names[0], roi_prefix=roi_prefix, dff=dff)
+        upv, epoch_indices = ImagingData.getEpochGroupingsByParameters(parameter_key=condition)
+        epoch_inds_by_exp[exp_ind] = epoch_indices
+        all_parameter_values.extend(upv)
+        run_parameters = ImagingData.getRunParameters()
+
+    unique_parameter_values = sorted([list(s) for s in set(tuple(pv) for pv in all_parameter_values)])
+    n_conditions = len(unique_parameter_values)
+    
+    bin_width = 1.0 / bin_frequency
+    
+    all_max_times = []
+    for exp_ind in range(len(ImagingDataObjects)):
+        rd = roi_data[exp_ind]
+        time_vector_list = rd['time_vector_by_epoch']
+        roi_z_offsets = rd.get('roi_z_offsets', np.array([0.0]))
+        max_offset = np.max(roi_z_offsets) if len(roi_z_offsets) > 0 else 0.0
+        for time_vector in time_vector_list:
+            if time_vector.size > 0:
+                all_max_times.append(time_vector[-1] + max_offset)
+    
+    global_max_time = max(all_max_times) if all_max_times else 0.0
+    bin_edges = np.arange(0, global_max_time + bin_width, bin_width)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+    n_bins = len(bin_centers)
+
+    trial_counts_by_condition = {cond_ind: np.zeros(n_bins) for cond_ind in range(n_conditions)}
+
+    for exp_ind in range(len(ImagingDataObjects)):
+        rd = roi_data[exp_ind]
+        epoch_response = rd['epoch_response']
+        roi_z_offsets = rd.get('roi_z_offsets', np.array([0.0]))
+        max_offset = np.max(roi_z_offsets) if len(roi_z_offsets) > 0 else 0.0
+        
+        for cond_ind in range(n_conditions):
+            trial_inds = epoch_inds_by_exp[exp_ind][cond_ind]
+            trial_inds = trial_inds[trial_inds < epoch_response.shape[1]]
+            
+            for trial_idx in trial_inds:
+                time_vector = rd['time_vector_by_epoch'][trial_idx] + max_offset
+                if len(time_vector) > 0:
+                    bin_indices = np.clip(np.digitize(time_vector, bin_edges) - 1, 0, n_bins - 1)
+                    valid_bins = np.unique(bin_indices)
+                    trial_counts_by_condition[cond_ind][valid_bins] += 1
+
+    fh, ax = plt.subplots(1, n_conditions, figsize=(10, 5 * 9 / 16), constrained_layout=True, squeeze=False)
+    for cond_ind, cond_value in enumerate(unique_parameter_values):
+        ax[0, cond_ind].plot(bin_centers, trial_counts_by_condition[cond_ind], color='k', marker='.')
+        ax[0, cond_ind].set_title('{} = {}'.format(condition, cond_value))
+        ax[0, cond_ind].set_ylabel('Valid Trials')
+        ax[0, cond_ind].set_xlabel('Time (s)')
+        ax[0, cond_ind].set_ylim(bottom=0)
+        ax[0, cond_ind].axvspan(run_parameters['pre_time'], run_parameters['pre_time'] + run_parameters['stim_time'], color='gray', alpha=0.2)
 
 def plotAllResponses(ImagingDataObjects, ch_names, roi_prefix='rois'):
     # plot all roi responses by 

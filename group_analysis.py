@@ -10,7 +10,7 @@ from visanalysis.util import plot_tools
 import matplotlib.pyplot as plt
 import os
 
-data_directory = os.path.join('C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS257')
+data_directory = os.path.join('C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS256_x_JS252')
 
 
 # %% Filter datafiles
@@ -72,19 +72,22 @@ search_IDs=[]
 for series in search_series:
     search_IDs.append(imaging_data.ImagingDataObject(series['file_name'], series['series'], quiet=True))
 
-shared_analysis.plotAllResponsesByCondition(search_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', roi_prefix='aligned')
+shared_analysis.plotAllResponsesByCondition(search_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned')
+shared_analysis.plotTrialCountsByCondition(search_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned')
 
 long_flash_IDs=[]
 for series in long_flash_series:
     long_flash_IDs.append(imaging_data.ImagingDataObject(series['file_name'], series['series'], quiet=True))
 
-shared_analysis.plotAllResponsesByCondition(long_flash_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', roi_prefix='aligned')
+shared_analysis.plotAllResponsesByCondition(long_flash_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned')
+shared_analysis.plotTrialCountsByCondition(long_flash_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned')
 
 short_flash_IDs=[]
 for series in short_flash_series:
     short_flash_IDs.append(imaging_data.ImagingDataObject(series['file_name'], series['series'], quiet=True))
 
-shared_analysis.plotAllResponsesByCondition(short_flash_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', roi_prefix='aligned')
+shared_analysis.plotAllResponsesByCondition(short_flash_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned')
+shared_analysis.plotTrialCountsByCondition(short_flash_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned')
 # %% ImagingDataObject wants a path to an hdf5 file and a series number from that file
 # ID = imaging_data.ImagingDataObject(file_path,
 #                                     series_number,
