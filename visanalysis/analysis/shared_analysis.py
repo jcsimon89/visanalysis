@@ -45,7 +45,7 @@ def getUniqueParameterCombinations(param_keys, ID):
     return list({tuple(row) for row in ep_params})
 
 
-def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_frequency, roi_prefix='rois', dff='pre'):
+def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_frequency, roi_prefix='rois', dff='pre', colors=None, alpha=0.4):
     """
     Plot all ROI responses by condition, pooling across ImagingDataObjects.
 
@@ -59,6 +59,9 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
         bin_frequency: float, Hz. Temporal frequency for the common time grid.
         roi_prefix: str, prefix for ROI group in HDF5 file
         dff: str, dF/F method passed to getRoiResponses ('pre', 'mean', 'none')
+        colors: optional list of colors, one per channel, overriding the default
+                ch1='c', ch2='orange' assignment (e.g. ['green', 'magenta'])
+        alpha: float or list of floats, SEM fill opacity per channel (default 0.4)
     """
     import warnings
 
@@ -192,6 +195,9 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
         else:
             ch_colors.append('gray')
             ch_labels.append('unk ch')
+    if colors is not None:
+        ch_colors = list(colors)
+    alpha_list = [alpha] * n_channels if not isinstance(alpha, (list, tuple)) else list(alpha)
 
     for cond_ind, cond_value in enumerate(unique_parameter_values):
         for ch_ind in range(n_channels):
@@ -213,7 +219,7 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
             # Fig 2: mean ± SEM
             ax2[ch_ind, cond_ind].plot(bin_centers, y, color='k')  # pyre-ignore[29]
             ax2[ch_ind, cond_ind].fill_between(bin_centers, y - error, y + error,  # pyre-ignore[29]
-                                               color=ch_colors[ch_ind], alpha=0.4)
+                                               color=ch_colors[ch_ind], alpha=alpha_list[ch_ind])
             ax2[ch_ind, cond_ind].set_title('{}, {} = {}'.format(ch_labels[ch_ind], condition, cond_value))  # pyre-ignore[29]
             ax2[ch_ind, cond_ind].set_ylabel(response_ylabel)  # pyre-ignore[29]
             ax2[ch_ind, cond_ind].set_xlabel('Time (s)')  # pyre-ignore[29]
@@ -230,7 +236,7 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
                 error = scipy.stats.sem(data, axis=0, nan_policy='omit')
             ax3[0, cond_ind].plot(bin_centers, y, color='k')  # pyre-ignore[29]
             ax3[0, cond_ind].fill_between(bin_centers, y - error, y + error,  # pyre-ignore[29]
-                                          color=ch_colors[ch_ind], alpha=0.4)
+                                          color=ch_colors[ch_ind], alpha=alpha_list[ch_ind])
         ax3[0, cond_ind].set_title('{} = {}'.format(condition, cond_value))  # pyre-ignore[29]
         ax3[0, cond_ind].set_ylabel(response_ylabel)  # pyre-ignore[29]
         ax3[0, cond_ind].set_xlabel('Time (s)')  # pyre-ignore[29]
@@ -727,7 +733,7 @@ def plotAllResponsesByCondition_DS(ImagingDataObjects, ch_names, response_set_na
             ax1[ch_ind, u_ind].axvspan(run_parameters['pre_time'], run_parameters['pre_time'] + run_parameters['stim_time'], color='gray', alpha=0.2)
 
 
-def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, condition, bin_frequency=20, roi_prefix='rois', dff='pre', colors=None):
+def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, condition, bin_frequency=20, roi_prefix='rois', dff='pre', colors=None, alpha=0.4):
     """
     Plot all ROI responses by condition, comparing multiple groups of ImagingDataObjects.
 
@@ -744,6 +750,7 @@ def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, conditio
         dff: str, dF/F method passed to getRoiResponses ('pre', 'mean', 'none')
         colors: optional list of colors, one per group, overriding the default
                 ['c', 'darkorange'] assignment (e.g. ['green', 'magenta'])
+        alpha: float or list of floats, SEM fill opacity per group (default 0.4)
     """
 
     import warnings
@@ -856,6 +863,7 @@ def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, conditio
     # ---- Step 4: Plot ----
     plt.rc('font', size=16)
     fill_colors = colors if colors is not None else ['c', 'darkorange']
+    alpha_list = [alpha] * len(fill_colors) if not isinstance(alpha, (list, tuple)) else list(alpha)
 
     ch_labels = []
     for ch_name in ch_names:
@@ -878,14 +886,18 @@ def plotAllResponsesByConditionComparison(ImagingDataObjects, ch_names, conditio
 
                 ax1[ch_ind, stim_cond_ind].plot(bin_centers, y, color='k')
                 ax1[ch_ind, stim_cond_ind].fill_between(bin_centers, y - error, y + error,
-                                                         color=fill_colors[group_ind % len(fill_colors)], alpha=0.4)
+                                                         color=fill_colors[group_ind % len(fill_colors)], alpha=alpha_list[group_ind % len(alpha_list)])
                 ax1[ch_ind, stim_cond_ind].set_title('{}, {} = {}, {}ms Flash'.format(
                     ch_labels[ch_ind], condition, cond_value, 1000 * run_parameters['stim_time']))
                 ax1[ch_ind, stim_cond_ind].set_ylabel(response_ylabel)
                 ax1[ch_ind, stim_cond_ind].set_xlabel('Time (s)')
-                ax1[ch_ind, stim_cond_ind].axvspan(run_parameters['pre_time'],
-                                                    run_parameters['pre_time'] + run_parameters['stim_time'],
-                                                    color='gray', alpha=0.2)
+
+    # Draw stim window once per axis (after all groups) to avoid stacking alpha
+    for stim_cond_ind in range(n_conditions):
+        for ch_ind in range(n_channels):
+            ax1[ch_ind, stim_cond_ind].axvspan(run_parameters['pre_time'],
+                                                run_parameters['pre_time'] + run_parameters['stim_time'],
+                                                color='gray', alpha=0.2)
 
 def plotF0ByConditionComparison(voxel_mean, color , quiet=True):
     """

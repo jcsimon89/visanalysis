@@ -148,9 +148,9 @@ short_flash_IDs[0] = short_flash_IDs_cnt
 short_flash_IDs[1] = short_flash_IDs_test
 
 
-shared_analysis.plotAllResponsesByConditionComparison(search_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned', colors=['c', 'darkcyan'])
-shared_analysis.plotAllResponsesByConditionComparison(long_flash_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned', colors=['c', 'darkcyan'])
-shared_analysis.plotAllResponsesByConditionComparison(short_flash_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned', colors=['c', 'darkcyan'])
+shared_analysis.plotAllResponsesByConditionComparison(search_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned', colors=['deepskyblue', 'steelblue'], alpha=[0.5, 0.8])
+shared_analysis.plotAllResponsesByConditionComparison(long_flash_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned', colors=['deepskyblue', 'steelblue'], alpha=[0.5, 0.8] )
+shared_analysis.plotAllResponsesByConditionComparison(short_flash_IDs, ch_names=['mask_ch1','mask_ch2'], condition='intensity', bin_frequency=20, roi_prefix='aligned', colors=['deepskyblue', 'steelblue'], alpha=[0.5, 0.8])
 # %% ImagingDataObject wants a path to an hdf5 file and a series number from that file
 # ID = imaging_data.ImagingDataObject(file_path,
 #                                     series_number,
