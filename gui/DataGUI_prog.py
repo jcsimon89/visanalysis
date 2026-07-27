@@ -18,15 +18,13 @@ import matplotlib.colors as mcolors
 from matplotlib.widgets import LassoSelector, EllipseSelector
 import matplotlib.cm as cm
 from PyQt6.QtWidgets import (QPushButton, QWidget, QLabel, QGridLayout,
-                             QApplication, QComboBox, QLineEdit, QFileDialog,
-                             QTableWidget, QTableWidgetItem, QSlider,
-                             QMessageBox, QTreeWidget, QTreeWidgetItem)
+                             QApplication, QComboBox, QLineEdit,
+                             QSlider, QMessageBox)
 import PyQt6.QtCore as QtCore
 import PyQt6.QtGui as QtGui
 import numpy as np
 
 from visanalysis.util import plot_tools, h5io
-from visanalysis.plugin import base as base_plugin
 
 
 class DataGUI(QWidget):
@@ -65,12 +63,12 @@ class DataGUI(QWidget):
         self.current_roi_index = 0
         self.current_z_slice = 0
         self.current_channel = 1  # index
-        self.image_series_name = ''
         self.series_number = series_number
         self.roi_response = []
         self.roi_mask = []
         self.roi_path = []
         self.roi_image = None
+        self.fano_image = None
         self.roi_path_list = []
 
         self.blank_image = np.zeros((1, 1))
@@ -83,30 +81,15 @@ class DataGUI(QWidget):
 
         self.plugin.updateImagingDataObject(experiment_file_directory, experiment_file_name, series_number)
 
-        ## load expt file - done
-        # from self.selectDataFile
-            # define experiment_file_path - done
-            # define self.experiment_file_name - done
-            # define experiment_file_directory - done
-        #self.currentExperimentLabel.setText(self.experiment_file_name) - moved to self.initUI()
-
-        #self.populateGroups() - not needed anymore
         self.updateExistingRoiSetList()
-
-        ## select data directory - done (added functionality to self.initUI())
-        ## select series number - done, passed argument from process_data.py
-        ## select image data file - done
-
         self.selectImageDataFile()
-
-        ## draw rois
-        ## save masks
-        ## close gui?
-
-        #TODO: add fano factor calc and plot?
 
     def initUI(self):
         self.grid = QGridLayout(self)
+
+        self.file_info_grid = QGridLayout()
+        self.file_info_grid.setSpacing(3)
+        self.grid.addLayout(self.file_info_grid, 0, 0, 1, 2)
 
         self.roi_control_grid = QGridLayout()
         self.roi_control_grid.setSpacing(3)
@@ -118,15 +101,18 @@ class DataGUI(QWidget):
 
         # Label with current expt file
         self.currentExperimentLabel = QLabel('')
-        self.currentExperimentLabel.setText(self.experiment_file_name) #TODO: fix experiment label display
-        
+        self.currentExperimentLabel.setText(self.experiment_file_name)
+        self.file_info_grid.addWidget(self.currentExperimentLabel, 0, 0)
+
         self.experiment_file_path_display = QLabel('')
         self.experiment_file_path_display.setText('..' + self.experiment_file_path[-24:])
         self.experiment_file_path_display.setFont(QtGui.QFont('SansSerif', 8))
-                   
+        self.file_info_grid.addWidget(self.experiment_file_path_display, 1, 0)
+
         # File name display
         self.currentImageFileNameLabel = QLabel('')
-        
+        self.file_info_grid.addWidget(self.currentImageFileNameLabel, 2, 0)
+
         # # # # Roi control # # # # # # # # (0, 2)
         # ROI type drop-down
         self.RoiTypeComboBox = QComboBox(self)
@@ -195,7 +181,7 @@ class DataGUI(QWidget):
             self.responsePlot = self.responseFig.add_subplot(111)
             self.responseCanvas = FigureCanvas(self.responseFig)
         self.responseCanvas.draw_idle()
-        self.plot_grid.addWidget(self.responseCanvas, 0, 0)
+        self.plot_grid.addWidget(self.responseCanvas, 0, 0, 1, 2)
 
         # # # # Image canvas # # # # # # # # (1, 2)
         self.roi_fig = plt.figure()
@@ -206,9 +192,23 @@ class DataGUI(QWidget):
         self.roi_ax.set_axis_off()
         self.plot_grid.addWidget(self.toolbar, 1, 0)
         self.plot_grid.addWidget(self.roi_canvas, 2, 0)
+
+        # # # # Fano factor canvas (variance / mean over time) # # # # (1, 2)
+        self.fano_fig = plt.figure()
+        self.fano_ax = self.fano_fig.add_subplot(111)
+        self.fano_canvas = FigureCanvas(self.fano_fig)
+        self.fano_ax.set_aspect('equal')
+        self.fano_ax.set_axis_off()
+        self.fano_ax.set_title('Fano factor', fontsize=8)
+        self.fano_im = self.fano_ax.imshow(self.blank_image, cmap='viridis')
+        self.fano_cbar = self.fano_fig.colorbar(self.fano_im, ax=self.fano_ax, fraction=0.046, pad=0.04)
+        self.plot_grid.addWidget(self.fano_canvas, 2, 1)
+
         self.plot_grid.setRowStretch(0, 1)
         self.plot_grid.setRowStretch(1, 3)
         self.plot_grid.setRowStretch(2, 3)
+        self.plot_grid.setColumnStretch(0, 1)
+        self.plot_grid.setColumnStretch(1, 1)
 
         # Current z slice slider
         self.zSlider = QSlider(QtCore.Qt.Orientation.Horizontal, self)
@@ -216,108 +216,13 @@ class DataGUI(QWidget):
         self.zSlider.setMaximum(50)
         self.zSlider.setValue(0)
         self.zSlider.valueChanged.connect(self.zSliderUpdated)
-        self.plot_grid.addWidget(self.zSlider, 3, 0)
+        self.plot_grid.addWidget(self.zSlider, 3, 0, 1, 2)
 
         self.roi_fig.tight_layout()
 
         self.setWindowTitle('Visanalysis')
         self.setGeometry(200, 200, 1200, 600)
         self.show()
-
-    def _populateTree(self, widget, dict):
-        widget.clear()
-        self.fill_item(widget.invisibleRootItem(), dict)
-
-    def fill_item(self, item, value):
-        item.setExpanded(True)
-        if type(value) is dict:
-            for key, val in sorted(value.items()):
-                child = QTreeWidgetItem()
-                child.setText(0, key)
-                item.addChild(child)
-                self.fill_item(child, val)
-        elif type(value) is list:
-            for val in value:
-                child = QTreeWidgetItem()
-                item.addChild(child)
-                if type(val) is dict:
-                    child.setText(0, '[dict]')
-                    self.fill_item(child, val)
-                elif type(val) is list:
-                    child.setText(0, '[list]')
-                    self.fill_item(child, val)
-                else:
-                    child.setText(0, val)
-                child.setExpanded(True)
-        else:
-            child = QTreeWidgetItem()
-            child.setText(0, value)
-            item.addChild(child)
-
-    def onTreeItemClicked(self, item, column):
-        file_path = self.experiment_file_path
-        group_path = h5io.getPathFromTreeItem(self.groupTree.selectedItems()[0])
-        self.clearRois()
-        self.series_number = None
-        if 'series_' in group_path:
-            self.series_number = int(group_path.split('series_')[-1].split('/')[0])
-            if self.plugin.dataIsAttached(file_path, self.series_number):
-                self.plugin.updateImagingDataObject(self.experiment_file_directory, self.experiment_file_name, self.series_number)
-            # look for image_file_name or ask user to select it
-            if self.experiment_file_path is not None:
-                image_file_name = h5io.readImageFileName(file_path, self.series_number)
-                if image_file_name is None or image_file_name == '':
-                    image_file_path, _ = QFileDialog.getOpenFileName(self, "Select image file")
-                    print('User selected image file at {}'.format(image_file_path))
-                    image_file_name = os.path.split(image_file_path)[-1]
-                    self.experiment_file_path = os.path.split(image_file_path)[:-1][0]
-                    h5io.attachImageFileName(file_path, self.series_number, image_file_name)
-                    print('Attached image_file_name {} to series {}'.format(image_file_name, self.series_number))
-                    print('Data directory is {}'.format(self.experiment_file_path))
-
-                self.image_file_name = image_file_name
-                self.currentImageFileNameLabel.setText(self.image_file_name)
-
-        else:  # clicked part of the tree upstream of any series
-            self.series_number = None
-
-        if item.parent() is not None:
-            if item.parent().text(column) == 'rois':  # selected existing roi group
-                roi_set_name = item.text(column)
-                # print('Selected roi set {} from series {}'.format(roi_set_name, self.series_number))
-                self.le_roiSetName.setText(roi_set_name)
-                roi_set_path = h5io.getPathFromTreeItem(self.groupTree.selectedItems()[0])
-                self.loadRois(roi_set_path)
-                self.redrawRoiTraces()
-
-        if group_path != '':
-            attr_dict = h5io.getAttributesFromGroup(file_path, group_path)
-            editable_values = True  # user can edit metadata
-            self.populate_attrs(attr_dict=attr_dict, editable_values=editable_values)
-
-        # show roi image
-        if self.series_number is not None:  # Clicked on node of the tree associated with a single series
-            if self.experiment_file_path is not None:  # user has selected a raw data directory
-                if self.plugin.dataIsAttached(file_path, self.series_number):
-                    self.plugin.updateImageSeries(experiment_file_path=self.experiment_file_path,
-                                                  image_file_name=self.image_file_name,
-                                                  series_number=self.series_number,
-                                                  channel=self.current_channel)
-                    self.roi_image = self.plugin.mean_brain
-                    self.zSlider.setValue(0)
-                    self.zSlider.setMaximum(self.roi_image.shape[2]-1)
-                    self.redrawRoiTraces()
-                else:
-                    print('Attach metadata to file before drawing rois')
-
-            else:
-                print('Select a data directory before drawing rois')
-
-        # # # TEST # # #
-        memory_usage = psutil.Process(os.getpid()).memory_info().rss*10**-9
-        print('Current Memory Usage: {:.2f}GB'.format(memory_usage))
-        sys.stdout.flush()
-        # # # TEST # # #
 
     def updateExistingRoiSetList(self):
         if self.experiment_file_name is not None:
@@ -388,72 +293,12 @@ class DataGUI(QWidget):
                                               series_number=self.series_number,
                                               channel=self.current_channel)
                 self.roi_image = self.plugin.mean_brain
+                self.fano_image = self.computeFanoImage()
                 self.zSlider.setValue(0)
                 self.zSlider.setMaximum(self.roi_image.shape[2]-1)
                 self.redrawRoiTraces()
             else:
                 print('Select a data directory before drawing rois')
-
-    def deleteSelectedGroup(self):
-        file_path = self.experiment_file_path
-        group_path = h5io.getPathFromTreeItem(self.groupTree.selectedItems()[0])
-        group_name = group_path.split('/')[-1]
-
-        buttonReply = QMessageBox.question(self,
-                                           'Delete series',
-                                           "Are you sure you want to delete group {}?".format(group_name),
-                                           QMessageBox.StandardButton.Yes |
-                                           QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-        if buttonReply == QMessageBox.StandardButton.Yes:
-            h5io.deleteGroup(file_path=file_path,
-                                    group_path=group_path)
-            print('Deleted group {}'.format(group_name))
-            self.updateExistingRoiSetList()
-            self.populateGroups()
-        else:
-            print('Delete aborted')
-
-    def populateGroups(self):
-        file_path = self.experiment_file_path
-        self.group_dset_dict = h5io.getHierarchy(file_path)
-        self._populateTree(self.groupTree, self.group_dset_dict)
-
-    def populate_attrs(self, attr_dict=None, editable_values=False):
-        """Populate attribute for currently selected group."""
-        self.tableAttributes.blockSignals(True)  # block udpate signals for auto-filled forms
-        self.tableAttributes.setRowCount(0)
-        self.tableAttributes.setColumnCount(2)
-        self.tableAttributes.setSortingEnabled(False)
-
-        if attr_dict:
-            for num, key in enumerate(attr_dict):
-                self.tableAttributes.insertRow(self.tableAttributes.rowCount())
-                key_item = QTableWidgetItem(key)
-                key_item.setFlags(QtCore.Qt.ItemFlag.ItemIsSelectable | QtCore.Qt.ItemFlag.ItemIsEnabled)
-                self.tableAttributes.setItem(num, 0, key_item)
-
-                val_item = QTableWidgetItem(str(attr_dict[key]))
-                if editable_values:
-                    val_item.setFlags(QtCore.Qt.ItemFlag.ItemIsSelectable | QtCore.Qt.ItemFlag.ItemIsEditable | QtCore.Qt.ItemFlag.ItemIsEnabled)
-                else:
-                    val_item.setFlags(QtCore.Qt.ItemFlag.ItemIsSelectable | QtCore.Qt.ItemFlag.ItemIsEnabled)
-                self.tableAttributes.setItem(num, 1, val_item)
-
-        self.tableAttributes.blockSignals(False)
-
-    def update_attrs_to_file(self, item):
-        file_path = self.experiment_file_path
-        group_path = h5io.getPathFromTreeItem(self.groupTree.selectedItems()[0])
-
-        attr_key = self.tableAttributes.item(item.row(), 0).text()
-        attr_val = item.text()
-
-        # update attr in file
-        h5io.changeAttribute(file_path=file_path,
-                             group_path=group_path,
-                             attr_key=attr_key,
-                             attr_val=attr_val)
-        print('Changed attr {} to = {}'.format(attr_key, attr_val))
 
 # %% # # # # # # # # ROI SELECTOR WIDGET # # # # # # # # # # # # # # # # # # #
 
@@ -484,6 +329,19 @@ class DataGUI(QWidget):
                 self.lasso_2 = LassoSelector(self.roi_ax, onselect=self.appendFreehand, button=3)
             else:
                 print('Warning ROI type not recognized. Choose circle or freehand')
+
+        self.refreshFanoWidget()
+
+    def refreshFanoWidget(self):
+        if self.fano_image is not None:
+            fano_slice = self.fano_image[:, :, self.current_z_slice]
+            self.fano_im.set_data(fano_slice)
+            finite_vals = fano_slice[np.isfinite(fano_slice)]
+            if finite_vals.size > 0:
+                self.fano_im.set_clim(vmin=np.nanmin(finite_vals), vmax=np.nanmax(finite_vals))
+        else:
+            self.fano_im.set_data(self.blank_image)
+        self.fano_canvas.draw()
 
     def newFreehand(self, verts):
         new_roi_path = path.Path(verts)
@@ -623,6 +481,7 @@ class DataGUI(QWidget):
         self.roi_response = []
         self.roi_path = []
         self.roi_image = None
+        self.fano_image = None
         self.clearRoiArtists()
         self.redrawRoiTraces()
         self.roi_ax.clear()
@@ -639,22 +498,15 @@ class DataGUI(QWidget):
             self.roi_radius = None
         self.redrawRoiTraces()
 
-    def selectChannel(self):
-        self.current_channel = int(self.ChannelComboBox.currentText())
-
-        # show roi image
-        if self.series_number is not None:
-            if self.experiment_file_path is not None:  # user has selected a raw data directory
-                self.plugin.updateImageSeries(experiment_file_path=self.experiment_file_path,
-                                              image_file_name=self.image_file_name,
-                                              series_number=self.series_number,
-                                              channel=self.current_channel)
-                self.roi_image = self.plugin.mean_brain
-                self.zSlider.setValue(0)
-                self.zSlider.setMaximum(self.roi_image.shape[2]-1)
-                self.redrawRoiTraces()
-            else:
-                print('Select a data directory before drawing rois')
+    def computeFanoImage(self):
+        """Fano factor (variance / mean) at each pixel, computed over the time axis of the raw series."""
+        current_series = getattr(self.plugin, 'current_series', None)
+        if current_series is None:
+            return None
+        mean_image = np.mean(current_series, axis=3)
+        var_image = np.var(current_series, axis=3)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return np.where(mean_image > 0, var_image / mean_image, np.nan)
 
 
 if __name__ == '__main__':
