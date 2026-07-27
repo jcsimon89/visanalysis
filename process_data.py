@@ -81,17 +81,17 @@ if __name__ == '__main__':
     print('func_channel_num = ' + str(func_channels_num))
 
     #TODO: other data needed from fly_json?
+    DO_BG_CH1 = fly_json.get('background_subtraction_ch1', False)
+    DO_BG_CH2 = fly_json.get('background_subtraction_ch2', False)
 
     # derive image_file_path
     # assumes folder structure from snake_eyesss
-
-        # assuming structural channel is brightest functional channel and will be used for roi selection,
-        # currently only doing bg subtraction for channel 2
-
-    if struct_channel_num[0] == '2':
-        image_file_name = 'channel_2_moco_bg_func.nii'
+    _struct_ch = struct_channel_num[0]
+    _do_bg_struct = (DO_BG_CH1 if _struct_ch == '1' else DO_BG_CH2 if _struct_ch == '2' else False)
+    if _do_bg_struct:
+        image_file_name = 'channel_' + _struct_ch + '_moco_bg_func.nii'
     else:
-        image_file_name = 'channel_' + struct_channel_num[0] + '_moco_func.nii'
+        image_file_name = 'channel_' + _struct_ch + '_moco_func.nii'
 
     image_relative_directory = 'func' + str(int(series_number)-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
     image_file_directory = os.path.join(experiment_file_directory, image_relative_directory)
@@ -211,16 +211,12 @@ if __name__ == '__main__':
             ch = 'ch' + str(current_channel)
             response_set_name = response_set_name_prefix + '_' + ch
 
-            #derive image file name and path, (assuming we only do background subtraction on channel 2 (green))
-
-            if current_channel == 2 and series_ind == 0: 
-                image_file_name = 'channel_' + str(current_channel) + '_moco_bg_func.nii' 
-            elif current_channel == 2 and series_ind > 0:
-                image_file_name = 'channel_' + str(current_channel) + '_moco_bg_func_reg.nii'
-            elif current_channel !=2 and series_ind == 0:
+            #derive image file name — moco aligns all series to func0's template directly
+            _do_bg = (DO_BG_CH1 if current_channel == 1 else DO_BG_CH2 if current_channel == 2 else False)
+            if _do_bg:
+                image_file_name = 'channel_' + str(current_channel) + '_moco_bg_func.nii'
+            else:
                 image_file_name = 'channel_' + str(current_channel) + '_moco_func.nii'
-            elif current_channel !=2 and series_ind > 0:
-                image_file_name = 'channel_' + str(current_channel) + '_moco_func_reg.nii' 
 
 
             image_relative_directory = 'func' + str(int(current_series)-1) + '/moco' #folder where .nii is, assumes func_ folder counting starts from 0 which series counter starts from 1
