@@ -125,7 +125,8 @@ if __name__ == '__main__':
     fly_metadata = ID.getSubjectMetadata()
     print('fly_metadata: ' + repr(fly_metadata))
 
-    subject_number = fly_metadata['subject_id']
+    with h5py.File(experiment_file_path, 'r') as f:
+        subject_number = list(f['/Subjects'].keys())[0]
 
     # initialize data structures (dicts) to store data for all series and channels
     roi_data = {}
