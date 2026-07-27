@@ -107,6 +107,9 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
         for time_vector in time_vector_list:
             if time_vector.size > 0:
                 all_max_times.append(time_vector[-1])
+    if len(all_max_times) == 0:
+        print('plotAllResponsesByCondition: no time vectors found across all experiments/channels. Check roi_prefix and ch_names.')
+        return
     global_max_time = max(all_max_times)
     bin_edges = np.arange(0, global_max_time + bin_width, bin_width)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
@@ -177,11 +180,11 @@ def plotAllResponsesByCondition(ImagingDataObjects, ch_names, condition, bin_fre
     plt.rc('font', size=16)
 
     # Figure 1: individual ROI traces
-    fh1, ax1 = plt.subplots(n_channels, n_conditions, figsize=(10, 10 * 9 / 16), constrained_layout=True, squeeze=False)
+    fh1, ax1 = plt.subplots(n_channels, n_conditions, figsize=((n_conditions/2)*10, 10 * 9 / 16), constrained_layout=True, squeeze=False)
     # Figure 2: mean ± SEM per channel
-    fh2, ax2 = plt.subplots(n_channels, n_conditions, figsize=(10, 10 * 9 / 16), constrained_layout=True, squeeze=False)
+    fh2, ax2 = plt.subplots(n_channels, n_conditions, figsize=((n_conditions/2)*10, 10 * 9 / 16), constrained_layout=True, squeeze=False)
     # Figure 3: mean ± SEM both channels overlaid
-    fh3, ax3 = plt.subplots(1, n_conditions, figsize=(10, 5 * 9 / 16), constrained_layout=True, squeeze=False)
+    fh3, ax3 = plt.subplots(1, n_conditions, figsize=((n_conditions/2)*10, 5 * 9 / 16), constrained_layout=True, squeeze=False)
 
     ch_colors = []
     ch_labels = []
@@ -264,9 +267,13 @@ def plotTrialCountsByCondition(ImagingDataObjects, ch_names, condition, bin_freq
 
     unique_parameter_values = sorted([list(s) for s in set(tuple(pv) for pv in all_parameter_values)])
     n_conditions = len(unique_parameter_values)
-    
+
+    if n_conditions == 0:
+        print('plotTrialCountsByCondition: no conditions found. Check roi_prefix and ch_names.')
+        return
+
     bin_width = 1.0 / bin_frequency
-    
+
     all_max_times = []
     for exp_ind in range(len(ImagingDataObjects)):
         rd = roi_data[exp_ind]
@@ -301,7 +308,7 @@ def plotTrialCountsByCondition(ImagingDataObjects, ch_names, condition, bin_freq
                     valid_bins = np.unique(bin_indices)
                     trial_counts_by_condition[cond_ind][valid_bins] += 1
 
-    fh, ax = plt.subplots(1, n_conditions, figsize=(10, 5 * 9 / 16), constrained_layout=True, squeeze=False)
+    fh, ax = plt.subplots(1, n_conditions, figsize=((n_conditions/2)*10, 5 * 9 / 16), constrained_layout=True, squeeze=False)
     for cond_ind, cond_value in enumerate(unique_parameter_values):
         ax[0, cond_ind].plot(bin_centers, trial_counts_by_condition[cond_ind], color='k', marker='.')
         ax[0, cond_ind].set_title('{} = {}'.format(condition, cond_value))
@@ -1080,7 +1087,7 @@ def areValsTheSame(target_val, test_val):
         return target_val == test_val
 
     elif isinstance(target_val, (int, float)):  # Scalar
-        if isinstance(test_val, (int, float)):
+        if isinstance(test_val, (int, float, np.integer, np.floating)):
             return float(target_val) == float(test_val)  # Ignore type for int vs. float here
         else:
             return False
