@@ -112,8 +112,20 @@ if __name__ == '__main__':
         
     
     # get series numbers (series_num) from hdf5
-    
+
     series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path))) # datatype = list of strings but individual series numbers will be converted to int before using methods
+
+    # skip any noizone (STRF) series here - those are trial-average-incompatible (no 'intensity' param)
+    # and are analyzed separately by analyze_data_strf_noizone.py
+    non_noizone_series_num = []
+    for current_series in series_num:
+        plug.updateImagingDataObject(experiment_file_directory, experiment_file_name, int(current_series))
+        current_run_parameters = plug.ImagingDataObject.getRunParameters()
+        if 'noizone' in str(current_run_parameters.get('protocol_ID', '')).lower():
+            print('skipping noizone series {} (analyzed separately by analyze_data_strf_noizone.py)'.format(current_series))
+        else:
+            non_noizone_series_num.append(current_series)
+    series_num = non_noizone_series_num
 
     # load imaging object with first series to get fly metadata
     ID = imaging_data.ImagingDataObject(experiment_file_path,
