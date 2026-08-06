@@ -9,13 +9,34 @@ import numpy as np
 import functools
 
 
+def _h5_safe_value(value):
+    """
+    h5py cannot write a numpy array of native unicode dtype ('<U...') as an
+    attribute directly (raises TypeError: No conversion path for dtype).
+    Arrays of multiple string values (e.g. unique bin_path values across a
+    series' epochs) need an explicit h5py string dtype instead.
+    """
+    if isinstance(value, np.ndarray) and value.dtype.kind == 'U':
+        return np.array(value, dtype=h5py.string_dtype(encoding='utf-8'))
+    return value
+
+
 def updateSeriesAttribute(file_path, series_number,
                           attr_key, attr_val):
     """User facing, compared to  changeAttribute"""
     with h5py.File(file_path, 'r+') as experiment_file:
         find_partial = functools.partial(find_series, sn=series_number)
         epoch_run_group = experiment_file.visititems(find_partial)
-        epoch_run_group.attrs[attr_key] = attr_val
+        epoch_run_group.attrs[attr_key] = _h5_safe_value(attr_val)
+
+
+def updateSeriesAttributes(file_path, series_number, attrs):
+    """Write attrs (dict) onto the run-level (series) group in one file open."""
+    with h5py.File(file_path, 'r+') as experiment_file:
+        find_partial = functools.partial(find_series, sn=series_number)
+        epoch_run_group = experiment_file.visititems(find_partial)
+        for attr_key, attr_val in attrs.items():
+            epoch_run_group.attrs[attr_key] = _h5_safe_value(attr_val)
 
 
 def deleteSeriesAttribute(file_path, series_number, attr_key):
@@ -23,6 +44,21 @@ def deleteSeriesAttribute(file_path, series_number, attr_key):
         find_partial = functools.partial(find_series, sn=series_number)
         epoch_run_group = experiment_file.visititems(find_partial)
         del epoch_run_group.attrs[attr_key]
+
+
+def updateEpochAttributes(file_path, series_number, epoch_ind, attrs):
+    """
+    Write attrs (dict) onto the epoch_ind'th epoch group of the given series.
+
+    epoch_ind must match the ordering of ImagingDataObject.getEpochParameters()
+    / epoch_run_group['epochs'].values(), i.e. epoch_ind=0 is the first trial.
+    """
+    with h5py.File(file_path, 'r+') as experiment_file:
+        find_partial = functools.partial(find_series, sn=series_number)
+        epoch_run_group = experiment_file.visititems(find_partial)
+        epoch_group = list(epoch_run_group['epochs'].values())[epoch_ind]
+        for attr_key, attr_val in attrs.items():
+            epoch_group.attrs[attr_key] = _h5_safe_value(attr_val)
 
 
 def deleteGroup(file_path, group_path):
