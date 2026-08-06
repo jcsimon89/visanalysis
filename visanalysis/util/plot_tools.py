@@ -86,13 +86,18 @@ def addImageScaleBar(ax, image, scale_bar_length, microns_per_pixel, location):
     ax.plot([start_x, end_x], [start_y, start_y], 'w')
 
 
-def overlayImage(im, mask, alpha, colors=None, z=0):
+def overlayImage(im, mask, alpha, colors=None, z=0, vmin=None, vmax=None):
     # image = [x,y,rgb]
     # mask can be 4d with slices
     #mask = [rois,x,y,(z)]
     # mask should be binary (true for mask, false for background)
+    # vmin/vmax: contrast range to normalize im by (defaults to [0, im.max()], as before)
 
-    im = im / np.max(im) # normalize image
+    if vmin is None:
+        vmin = 0
+    if vmax is None:
+        vmax = np.max(im)
+    im = np.clip((im - vmin) / (vmax - vmin), 0, 1) # normalize image to contrast range
     if len(im.shape) < 3:
         imRGB = np.tile(im[..., np.newaxis], 3) # add rgb vals as 3rd dim
     else:

@@ -69,11 +69,20 @@ class DataGUI(QWidget):
         self.roi_path = []
         self.roi_image = None
         self.fano_image = None
+        self.show_fano_overlay = False
         self.roi_path_list = []
 
         self.blank_image = np.zeros((1, 1))
 
         self.colors = [mcolors.to_rgb(x) for x in list(mcolors.XKCD_COLORS)[:self.max_rois]]
+
+        self.fano_cmap = plt.get_cmap('viridis').copy()
+        self.fano_cmap.set_bad(alpha=0)  # drawn-over ROI pixels (NaN) show as transparent
+
+        self.img_data_min, self.img_data_max = 0.0, 1.0
+        self.img_vmin, self.img_vmax = 0.0, 1.0
+        self.fano_data_min, self.fano_data_max = 0.0, 1.0
+        self.fano_vmin, self.fano_vmax = 0.0, 1.0
 
         self.initializeDataAnalysis()
 
@@ -193,6 +202,14 @@ class DataGUI(QWidget):
         self.plot_grid.addWidget(self.toolbar, 1, 0)
         self.plot_grid.addWidget(self.roi_canvas, 2, 0)
 
+        # Fano overlay colorbar: create once so its reserved space never resizes roi_ax
+        # on toggle -- shown/hidden afterward, never removed/re-added.
+        overlay_im_placeholder = self.roi_ax.imshow(self.blank_image, cmap=self.fano_cmap, alpha=0.5)
+        self.overlay_cbar = self.roi_fig.colorbar(overlay_im_placeholder, ax=self.roi_ax, fraction=0.046, pad=0.04)
+        self.overlay_cbar.ax.set_visible(False)
+
+        self.roi_canvas.mpl_connect('scroll_event', self.onScrollZoom)
+
         # # # # Fano factor canvas (variance / mean over time) # # # # (1, 2)
         self.fano_fig = plt.figure()
         self.fano_ax = self.fano_fig.add_subplot(111)
@@ -200,7 +217,7 @@ class DataGUI(QWidget):
         self.fano_ax.set_aspect('equal')
         self.fano_ax.set_axis_off()
         self.fano_ax.set_title('Fano factor', fontsize=8)
-        self.fano_im = self.fano_ax.imshow(self.blank_image, cmap='viridis')
+        self.fano_im = self.fano_ax.imshow(self.blank_image, cmap=self.fano_cmap)
         self.fano_cbar = self.fano_fig.colorbar(self.fano_im, ax=self.fano_ax, fraction=0.046, pad=0.04)
         self.plot_grid.addWidget(self.fano_canvas, 2, 1)
 
@@ -210,19 +227,53 @@ class DataGUI(QWidget):
         self.plot_grid.setColumnStretch(0, 1)
         self.plot_grid.setColumnStretch(1, 1)
 
+        # Toggle fano factor overlay on roi image (below the roi image, not the fano panel)
+        self.fanoOverlayButton = QPushButton("Show Fano Overlay", self)
+        self.fanoOverlayButton.setCheckable(True)
+        self.fanoOverlayButton.toggled.connect(self.toggleFanoOverlay)
+        self.plot_grid.addWidget(self.fanoOverlayButton, 3, 0)
+
+        # Contrast (min/max) sliders, one pair per canvas
+        self.imgMinSlider, self.imgMaxSlider, img_contrast_grid = self._buildContrastSliders('Image', self.imgContrastChanged)
+        self.plot_grid.addLayout(img_contrast_grid, 4, 0)
+
+        self.fanoMinSlider, self.fanoMaxSlider, fano_contrast_grid = self._buildContrastSliders('Fano', self.fanoContrastChanged)
+        self.plot_grid.addLayout(fano_contrast_grid, 4, 1)
+
         # Current z slice slider
         self.zSlider = QSlider(QtCore.Qt.Orientation.Horizontal, self)
         self.zSlider.setMinimum(0)
         self.zSlider.setMaximum(50)
         self.zSlider.setValue(0)
         self.zSlider.valueChanged.connect(self.zSliderUpdated)
-        self.plot_grid.addWidget(self.zSlider, 3, 0, 1, 2)
+        self.plot_grid.addWidget(self.zSlider, 5, 0, 1, 2)
 
         self.roi_fig.tight_layout()
 
         self.setWindowTitle('Visanalysis')
         self.setGeometry(200, 200, 1200, 600)
         self.show()
+
+    def _buildContrastSliders(self, label, on_change):
+        """Build a labeled min/max contrast slider pair (0-1000, mapped to a data range elsewhere).
+
+        min slider stacked above max slider; each slider's left end is its low
+        value and right end is its high value.
+        """
+        grid = QGridLayout()
+        min_slider = QSlider(QtCore.Qt.Orientation.Horizontal, self)
+        min_slider.setRange(0, 1000)
+        min_slider.setValue(0)
+        min_slider.valueChanged.connect(on_change)
+        max_slider = QSlider(QtCore.Qt.Orientation.Horizontal, self)
+        max_slider.setRange(0, 1000)
+        max_slider.setValue(1000)
+        max_slider.valueChanged.connect(on_change)
+        grid.addWidget(QLabel('{} min'.format(label)), 0, 0)
+        grid.addWidget(min_slider, 0, 1)
+        grid.addWidget(QLabel('{} max'.format(label)), 1, 0)
+        grid.addWidget(max_slider, 1, 1)
+        return min_slider, max_slider, grid
 
     def updateExistingRoiSetList(self):
         if self.experiment_file_name is not None:
@@ -294,26 +345,50 @@ class DataGUI(QWidget):
                                               channel=self.current_channel)
                 self.roi_image = self.plugin.mean_brain
                 self.fano_image = self.computeFanoImage()
+                self.resetContrastRanges()
                 self.zSlider.setValue(0)
                 self.zSlider.setMaximum(self.roi_image.shape[2]-1)
-                self.redrawRoiTraces()
+                self.redrawRoiTraces(reset_zoom=True)
             else:
                 print('Select a data directory before drawing rois')
 
 # %% # # # # # # # # ROI SELECTOR WIDGET # # # # # # # # # # # # # # # # # # #
 
-    def refreshLassoWidget(self, keep_paths=False):
+    def refreshLassoWidget(self, keep_paths=False, reset_zoom=False):
+        preserve_zoom = self.roi_image is not None and not reset_zoom
+        if preserve_zoom:
+            prev_xlim = self.roi_ax.get_xlim()
+            prev_ylim = self.roi_ax.get_ylim()
+
         self.roi_ax.clear()
         init_lasso = False
         if self.roi_image is not None:
+            image_slice = self.roi_image[:, :, self.current_z_slice]
             if len(self.roi_mask) > 0:
-                newImage = plot_tools.overlayImage(self.roi_image[:, :, self.current_z_slice], self.roi_mask, 0.5, self.colors, z=self.current_z_slice)
+                newImage = plot_tools.overlayImage(image_slice, self.roi_mask, 0.5, self.colors,
+                                                   z=self.current_z_slice, vmin=self.img_vmin, vmax=self.img_vmax)
+                self.roi_ax.imshow(newImage)
             else:
-                newImage = self.roi_image[:, :, self.current_z_slice]
-            self.roi_ax.imshow(newImage, cmap=cm.gray)
+                self.roi_ax.imshow(image_slice, cmap=cm.gray, vmin=self.img_vmin, vmax=self.img_vmax)
             init_lasso = True
+
+            if self.show_fano_overlay and self.fano_image is not None:
+                fano_slice = self.getFanoSliceForDisplay(self.current_z_slice)
+                # Re-point the persistent colorbar at a fresh overlay image rather than
+                # adding/removing a colorbar, which would resize roi_ax on every toggle.
+                overlay_im = self.roi_ax.imshow(fano_slice, cmap=self.fano_cmap, alpha=0.5,
+                                                vmin=self.fano_vmin, vmax=self.fano_vmax)
+                self.overlay_cbar.update_normal(overlay_im)
+                self.overlay_cbar.ax.set_visible(True)
+            else:
+                self.overlay_cbar.ax.set_visible(False)
+
+            if preserve_zoom:  # imshow() resets view limits to fit the new image -- restore prior zoom/pan
+                self.roi_ax.set_xlim(prev_xlim)
+                self.roi_ax.set_ylim(prev_ylim)
         else:
             self.roi_ax.imshow(self.blank_image)
+            self.overlay_cbar.ax.set_visible(False)
         self.roi_ax.set_axis_off()
 
         self.roi_canvas.draw()
@@ -332,16 +407,93 @@ class DataGUI(QWidget):
 
         self.refreshFanoWidget()
 
+    def onScrollZoom(self, event):
+        """Zoom the roi image in/out around the cursor. Doesn't touch data coordinates,
+        so it can't affect where a lasso/ellipse ROI actually lands."""
+        if event.inaxes != self.roi_ax or self.roi_image is None:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+        zoom_factor = 0.8 if event.button == 'up' else 1.25
+        xlim = self.roi_ax.get_xlim()
+        ylim = self.roi_ax.get_ylim()
+        self.roi_ax.set_xlim([event.xdata + (x - event.xdata) * zoom_factor for x in xlim])
+        self.roi_ax.set_ylim([event.ydata + (y - event.ydata) * zoom_factor for y in ylim])
+        self.roi_canvas.draw_idle()
+
     def refreshFanoWidget(self):
         if self.fano_image is not None:
-            fano_slice = self.fano_image[:, :, self.current_z_slice]
+            fano_slice = self.getFanoSliceForDisplay(self.current_z_slice)
             self.fano_im.set_data(fano_slice)
-            finite_vals = fano_slice[np.isfinite(fano_slice)]
-            if finite_vals.size > 0:
-                self.fano_im.set_clim(vmin=np.nanmin(finite_vals), vmax=np.nanmax(finite_vals))
+            self.fano_im.set_extent((-0.5, fano_slice.shape[1] - 0.5, fano_slice.shape[0] - 0.5, -0.5))
+            self.fano_ax.set_xlim(-0.5, fano_slice.shape[1] - 0.5)
+            self.fano_ax.set_ylim(fano_slice.shape[0] - 0.5, -0.5)
+            self.fano_im.set_clim(vmin=self.fano_vmin, vmax=self.fano_vmax)
         else:
             self.fano_im.set_data(self.blank_image)
         self.fano_canvas.draw()
+
+    def getFanoSliceForDisplay(self, z_slice):
+        """Fano factor image for one z slice, with already-drawn ROI pixels excluded (NaN)."""
+        fano_slice = self.fano_image[:, :, z_slice].copy()
+        if len(self.roi_mask) > 0:
+            drawn = np.any([mask[:, :, z_slice] for mask in self.roi_mask], axis=0)
+            fano_slice[drawn] = np.nan
+        return fano_slice
+
+    def toggleFanoOverlay(self, checked):
+        self.show_fano_overlay = checked
+        self.refreshLassoWidget(keep_paths=True)
+
+    def resetContrastRanges(self):
+        """Auto-scale contrast sliders to the newly loaded image/fano data."""
+        self.img_data_min = float(np.nanmin(self.roi_image))
+        self.img_data_max = float(np.nanmax(self.roi_image))
+        self.img_vmin, self.img_vmax = self.img_data_min, self.img_data_max
+        self.imgMinSlider.blockSignals(True)
+        self.imgMaxSlider.blockSignals(True)
+        self.imgMinSlider.setValue(0)
+        self.imgMaxSlider.setValue(1000)
+        self.imgMinSlider.blockSignals(False)
+        self.imgMaxSlider.blockSignals(False)
+
+        finite_fano = self.fano_image[np.isfinite(self.fano_image)] if self.fano_image is not None else np.array([])
+        if finite_fano.size > 0:
+            self.fano_data_min = float(np.min(finite_fano))
+            self.fano_data_max = float(np.max(finite_fano))
+        else:
+            self.fano_data_min, self.fano_data_max = 0.0, 1.0
+        self.fano_vmin, self.fano_vmax = self.fano_data_min, self.fano_data_max
+        self.fanoMinSlider.blockSignals(True)
+        self.fanoMaxSlider.blockSignals(True)
+        self.fanoMinSlider.setValue(0)
+        self.fanoMaxSlider.setValue(1000)
+        self.fanoMinSlider.blockSignals(False)
+        self.fanoMaxSlider.blockSignals(False)
+
+    def _sliderToValue(self, slider, data_min, data_max):
+        frac = slider.value() / slider.maximum()
+        return data_min + frac * (data_max - data_min)
+
+    def imgContrastChanged(self):
+        if self.imgMinSlider.value() >= self.imgMaxSlider.value():
+            if self.sender() is self.imgMinSlider:
+                self.imgMaxSlider.setValue(self.imgMinSlider.value() + 1)
+            else:
+                self.imgMinSlider.setValue(self.imgMaxSlider.value() - 1)
+        self.img_vmin = self._sliderToValue(self.imgMinSlider, self.img_data_min, self.img_data_max)
+        self.img_vmax = self._sliderToValue(self.imgMaxSlider, self.img_data_min, self.img_data_max)
+        self.refreshLassoWidget(keep_paths=True)
+
+    def fanoContrastChanged(self):
+        if self.fanoMinSlider.value() >= self.fanoMaxSlider.value():
+            if self.sender() is self.fanoMinSlider:
+                self.fanoMaxSlider.setValue(self.fanoMinSlider.value() + 1)
+            else:
+                self.fanoMinSlider.setValue(self.fanoMaxSlider.value() - 1)
+        self.fano_vmin = self._sliderToValue(self.fanoMinSlider, self.fano_data_min, self.fano_data_max)
+        self.fano_vmax = self._sliderToValue(self.fanoMaxSlider, self.fano_data_min, self.fano_data_max)
+        self.refreshLassoWidget(keep_paths=True)
 
     def newFreehand(self, verts):
         new_roi_path = path.Path(verts)
@@ -412,7 +564,7 @@ class DataGUI(QWidget):
         if self.roi_image is not None:
             self.refreshLassoWidget(keep_paths=True)
 
-    def redrawRoiTraces(self):
+    def redrawRoiTraces(self, reset_zoom=False):
         self.clearRoiArtists()
         if self.current_roi_index < len(self.roi_response):
             current_raw_trace = np.squeeze(self.roi_response[self.current_roi_index])
@@ -425,7 +577,7 @@ class DataGUI(QWidget):
             self.responsePlot.set_ylim([y_min, y_max])
         self.responseCanvas.draw()
 
-        self.refreshLassoWidget(keep_paths=False)
+        self.refreshLassoWidget(keep_paths=False, reset_zoom=reset_zoom)
 
 # %% # # # # # # # # LOADING / SAVING / COMPUTING ROIS # # # # # # # # # # # # # # # # # # #
 
