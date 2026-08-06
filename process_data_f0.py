@@ -165,7 +165,7 @@ if __name__ == '__main__':
             print('run_gui: ' + str(run_gui))
             if run_gui:
 
-                gui_path = str(os.path.join(os.getcwd(),"gui/DataGUI_prog.py"))
+                gui_path = str(os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui", "DataGUI_prog.py"))
 
                 os.system('python ' + gui_path
                         + ' --experiment_file_directory ' + experiment_file_directory

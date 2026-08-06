@@ -18,6 +18,7 @@ from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
 from visanalysis.util import plot_tools
+from visanalysis.util.noise_stim import is_noizone
 import h5py
 import scipy.stats
 
@@ -121,7 +122,7 @@ if __name__ == '__main__':
     for current_series in series_num:
         plug.updateImagingDataObject(experiment_file_directory, experiment_file_name, int(current_series))
         current_run_parameters = plug.ImagingDataObject.getRunParameters()
-        if 'noizone' in str(current_run_parameters.get('protocol_ID', '')).lower():
+        if is_noizone(current_run_parameters):
             print('skipping noizone series {} (analyzed separately by analyze_data_strf_noizone.py)'.format(current_series))
         else:
             non_noizone_series_num.append(current_series)
@@ -386,7 +387,7 @@ if __name__ == '__main__':
     sn = search_series
     fig_name = 'search_mean_response_all_{}_rois'.format(tag)
     fig_format = '.pdf'
-    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
     #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
     for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
         ch = 'ch' + current_channel
@@ -414,7 +415,7 @@ if __name__ == '__main__':
     fig_format = '.pdf'
     #[plot_tools.cleanAxes(x) for x in ax.ravel()]
     for roi_ind in range(n_roi):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
         #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
         for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
             ch = 'ch' + current_channel
@@ -441,7 +442,7 @@ if __name__ == '__main__':
     fig_name_string = 'mean_intensity'
     fig_format = '.pdf'
     for roi_ind in range(n_roi):
-        fh, ax = plt.subplots(len(func_channels_num), len(series_num), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(len(func_channels_num), len(series_num), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
         for series_ind, current_series in enumerate(series_num):
             sn = 'sn' + current_series
             for ch_ind, current_channel in enumerate(func_channels_num):
@@ -464,7 +465,7 @@ if __name__ == '__main__':
     # plot 4: avg roi intensity over series (1, 2, 3) - for all rois
     fig_name = 'mean_intensity_all_{}_rois'.format(tag)
     fig_format = '.pdf'
-    fh, ax = plt.subplots(len(func_channels_num), len(series_num), figsize=(12, 12*(9/16)),constrained_layout = True)
+    fh, ax = plt.subplots(len(func_channels_num), len(series_num), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
     for series_ind, current_series in enumerate(series_num):
         sn = 'sn' + current_series
         for ch_ind, current_channel in enumerate(func_channels_num):
@@ -490,7 +491,7 @@ if __name__ == '__main__':
     fig_name_string = 'individual_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf'
     for roi_ind in range(n_roi):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -517,7 +518,7 @@ if __name__ == '__main__':
     fig_name_string = 'individual_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf'
     for roi_ind in range(n_roi):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -542,7 +543,7 @@ if __name__ == '__main__':
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name = 'mean_responses_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
     fig_format = '.pdf' 
-    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
     for ch_ind, current_channel in enumerate(func_channels_num):
         ch = 'ch' + current_channel
         for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -568,7 +569,7 @@ if __name__ == '__main__':
     fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf' 
     for roi_ind in range(n_roi):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -593,7 +594,7 @@ if __name__ == '__main__':
     fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
     fig_name = 'mean_responses_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
     fig_format = '.pdf' 
-    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
     for ch_ind, current_channel in enumerate(func_channels_num):
         ch = 'ch' + current_channel
         for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -618,7 +619,7 @@ if __name__ == '__main__':
     fig_name_string = 'mean_responses_flash_{}'.format(fig_stim_time) #convert from s to ms
     fig_format = '.pdf' 
     for roi_ind in range(n_roi):
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -644,7 +645,7 @@ if __name__ == '__main__':
         fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
         fig_name = 'combined_mean_responses_search_stim_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
         fig_format = '.pdf' 
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -673,7 +674,7 @@ if __name__ == '__main__':
         fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
         fig_name = 'combined_mean_responses_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
         fig_format = '.pdf' 
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
@@ -702,7 +703,7 @@ if __name__ == '__main__':
         fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
         fig_name = 'combined_mean_responses_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
         fig_format = '.pdf' 
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True)
+        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
         for ch_ind, current_channel in enumerate(func_channels_num):
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):

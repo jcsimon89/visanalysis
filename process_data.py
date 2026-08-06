@@ -19,6 +19,11 @@ from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
 from visanalysis.util import plot_tools
+from visanalysis.util import h5io
+from visanalysis.util.noise_stim import (
+    is_flymax_movie, get_epoch_bin_filename, find_bin_files, load_stim_params_json,
+    resolve_attrs_to_write, unique_values,
+)
 
 # call structure: python process_data.py --experiment_file_directory "path" --rig "rigID" --series_number "series_number" --run_gui "True/False" --attach_metadata "True/False"
 
@@ -38,6 +43,9 @@ if __name__ == '__main__':
     parser.add_argument("--attach_metadata", nargs="?", help="True/False")
     parser.add_argument("--roi_set_name", nargs="?", default='roi_set_name', help="name of roi set for analysis")
     parser.add_argument("--response_set_name_prefix", nargs="?", default='mask', help="name of response set for analysis")
+    parser.add_argument("--flymax_movies_root", nargs="?", default=None,
+                        help="Root directory to search for noise stimulus .bin/_params.json files "
+                             "(only required if the fly has a noizone series)")
     args = parser.parse_args()
 
     roi_set_name = args.roi_set_name
@@ -45,6 +53,7 @@ if __name__ == '__main__':
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
     series_number = args.series_number
+    flymax_movies_root = args.flymax_movies_root
     
     if args.run_gui == 'True':
         run_gui = True
@@ -127,11 +136,127 @@ if __name__ == '__main__':
 
         print('Attached metadata to {}'.format(experiment_file_name))
 
+    # ── resolve + cache movie-stimulus parameters (any flymax movie-playback ──
+    # series -- noizone, the Edge/search stimulus, or anything else built the
+    # same way) ─────────────────────────────────────────────────────────────
+    # For each such series, look up every epoch's bin filename, resolve all of
+    # them under flymax_movies_root in one pass, load each unique bin's
+    # _params.json sidecar once, and write bin_path + all json params onto
+    # each epoch as hdf5 attributes -- so downstream analysis reads them
+    # straight from the hdf5 instead of touching the filesystem. Also writes,
+    # at the series (run) level, the set of unique values seen for each field
+    # across that series' epochs -- mirroring what native stimpack itself
+    # writes for a live-rendered protocol (e.g. run_parameters['intensity']
+    # listing every value used across the series). Before writing anything,
+    # every value is checked against what's already there (native stimpack
+    # fields, or a previous run of this script) -- same value: skip; missing:
+    # write; different value: hard error, since that means a same-named field
+    # means something different natively and would otherwise be silently
+    # clobbered (see resolve_attrs_to_write).
+    series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path)))
+    print('series_num = ' + str(series_num))
+
+    movie_epochs_by_series = {}  # series_int -> list of (epoch_ind, bin_filename)
+    run_params_by_series = {}    # series_int -> run_parameters (for the collision check)
+    needed_filenames = set()
+
+    for current_series in series_num:
+        current_series_int = int(current_series)
+        plug.updateImagingDataObject(experiment_file_directory, experiment_file_name, current_series_int)
+        movie_ID = plug.ImagingDataObject
+        run_params = movie_ID.getRunParameters()
+        if not is_flymax_movie(run_params):
+            continue
+        run_params_by_series[current_series_int] = run_params
+        epoch_list = []
+        for epoch_ind, epoch_params in enumerate(movie_ID.getEpochParameters()):
+            bin_filename = get_epoch_bin_filename(epoch_params)
+            epoch_list.append((epoch_ind, bin_filename))
+            needed_filenames.add(bin_filename)
+        movie_epochs_by_series[current_series_int] = epoch_list
+
+    if movie_epochs_by_series:
+        if not flymax_movies_root:
+            raise ValueError(
+                'Found flymax movie-playback series but --flymax_movies_root was not '
+                'provided. Pass the root directory containing the movie .bin/_params.json files.'
+            )
+        print('Resolving {} unique movie bin file(s) under {}...'.format(
+            len(needed_filenames), flymax_movies_root))
+        bin_paths = find_bin_files(flymax_movies_root, needed_filenames)
+
+        params_cache = {}  # bin_path -> params dict (loaded once per unique file)
+        for bin_path in set(bin_paths.values()):
+            params_json = load_stim_params_json(bin_path)
+            if params_json is None:
+                raise FileNotFoundError('No _params.json sidecar found next to {}'.format(bin_path))
+            params_cache[bin_path] = params_json
+
+        def _cache_movie_attrs(target_file_name, target_file_path):
+            """
+            Resolve + write the movie attrs against target_file_path specifically
+            (its own current attrs, via its own ImagingDataObject) rather than
+            reusing the raw file's collision check -- so this can be called again
+            for fly_final.hdf5 (once select_rois.py has created it) to keep it in
+            sync without ever touching its ROI/STRF datasets.
+            """
+            n_epochs = 0
+            for current_series_int, epoch_list in movie_epochs_by_series.items():
+                resolved_epoch_attrs = []  # each epoch's full resolved attrs, for the run-level uniques below
+
+                plug.updateImagingDataObject(experiment_file_directory, target_file_name, current_series_int)
+                target_epoch_params_list = plug.ImagingDataObject.getEpochParameters()
+                target_run_params = plug.ImagingDataObject.getRunParameters()
+
+                for epoch_ind, bin_filename in epoch_list:
+                    bin_path = bin_paths[bin_filename]
+                    new_attrs = {'bin_path': bin_path, **params_cache[bin_path]}
+                    to_write = resolve_attrs_to_write(
+                        target_epoch_params_list[epoch_ind], new_attrs,
+                        '{} series {} epoch {}'.format(target_file_name, current_series_int, epoch_ind),
+                    )
+                    if to_write:
+                        h5io.updateEpochAttributes(target_file_path, current_series_int, epoch_ind, to_write)
+                    resolved_epoch_attrs.append(new_attrs)
+                    n_epochs += 1
+
+                # run-level: unique values per field across all epochs in this series
+                all_keys = set()
+                for attrs in resolved_epoch_attrs:
+                    all_keys.update(attrs.keys())
+                run_level_attrs = {}
+                for key in all_keys:
+                    values = unique_values([a[key] for a in resolved_epoch_attrs if key in a])
+                    run_level_attrs[key] = values[0] if len(values) == 1 else np.array(values)
+
+                to_write_run = resolve_attrs_to_write(
+                    target_run_params, run_level_attrs,
+                    '{} series {} (run-level)'.format(target_file_name, current_series_int),
+                )
+                if to_write_run:
+                    h5io.updateSeriesAttributes(target_file_path, current_series_int, to_write_run)
+            return n_epochs
+
+        n_epochs_total = _cache_movie_attrs(experiment_file_name, experiment_file_path)
+        print('Cached movie parameters for {} epoch(s) across {} movie-playback series.'.format(
+            n_epochs_total, len(movie_epochs_by_series)))
+
+        # Mirror the same attrs into fly_final.hdf5 if select_rois.py has already
+        # created it (a prior pipeline run) -- keeps it in sync with fly.hdf5
+        # without ever re-copying/touching its ROI or STRF datasets. See
+        # select_rois.py: once fly_final.hdf5 exists, it only ever patches ROI
+        # datasets in place and never re-syncs attrs from the raw file itself.
+        final_file_name = 'fly_final.hdf5'
+        final_file_path = os.path.join(experiment_file_directory, final_file_name)
+        if os.path.exists(final_file_path):
+            print('{} already exists -- mirroring cached movie parameters into it too...'.format(final_file_name))
+            _cache_movie_attrs(final_file_name, final_file_path)
+
     ##draw roi masks using reduced GUI
     print('run_gui: ' + str(run_gui))
     if run_gui:
 
-        gui_path = str(os.path.join(os.getcwd(),"gui/DataGUI_prog.py"))
+        gui_path = str(os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui", "DataGUI_prog.py"))
 
         os.system('python ' + gui_path
                 + ' --experiment_file_directory ' + experiment_file_directory
@@ -187,12 +312,8 @@ if __name__ == '__main__':
     print('number of rois in roi_mask: ' + str(n_roi))
 
 
-    ## extract other important metadata for analysis
-    series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path))) # datatype = list of strings but individual series numbers will be converted to int before using methods
-    print('series_num = '+ str(series_num))
-
-    
     ## start response extraction
+    # (series_num already computed above, before ROI selection)
 
     for series_ind, current_series in enumerate(series_num): #loop through all series
         current_series = int(current_series) # methods expect series number to be datatype int
