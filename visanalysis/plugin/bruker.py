@@ -257,9 +257,21 @@ def getVoltageRecording(filepath):
 
     time_vector = data_frame.get('Time(ms)').values / 1e3  # ->sec
 
+    # Column headers are sometimes written with a leading space (e.g. ' AI 1') and
+    # sometimes without (e.g. 'AI 1'), depending on the rig/PrairieView version.
+    stripped_columns = {col.strip(): col for col in data_frame.columns}
+
     frame_monitor = []  # get responses in all active channels
     for ac in active_channels:
-        frame_monitor.append(data_frame.get(' ' + ac).values)
+        matching_col = stripped_columns.get(ac.strip())
+        if matching_col is None:
+            print('Warning: voltage recording channel "{}" is enabled in metadata but has no matching column in {}.csv'.format(ac, filepath))
+            continue
+        frame_monitor.append(data_frame[matching_col].values)
+
+    if len(frame_monitor) == 0:
+        raise ValueError('No enabled voltage recording channels found in {}.csv'.format(filepath))
+
     frame_monitor = np.vstack(frame_monitor)
 
     return frame_monitor, time_vector, sample_rate
