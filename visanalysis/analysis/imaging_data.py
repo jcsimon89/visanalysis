@@ -375,6 +375,13 @@ class ImagingDataObject:
             )
             frame_times = np.sort(np.append(ups, downs))
 
+            # same-edge-type spacing (up-to-up, down-to-down), diagnostic only --
+            # reports the full tracker-cycle duration, useful for distinguishing
+            # a genuine dropped frame from a benign on/off duty-cycle asymmetry
+            # in the mixed (up-to-down / down-to-up) intervals used below.
+            up_to_up_intervals = np.diff(np.sort(ups))
+            down_to_down_intervals = np.diff(np.sort(downs))
+
             # Use frame flip times to find stimulus start times
             stimulus_start_frames = np.append(
                 0, np.where(np.diff(frame_times) > minimum_epoch_separation)[0] + 1
@@ -394,20 +401,21 @@ class ImagingDataObject:
 
             ideal_frame_len = 1 / self.command_frame_rate * sample_rate  # datapoints
             frame_durations = []
+            all_frame_durations = []  # every measured interval, unfiltered (diagnostic)
             dropped_frame_times = []
             for s_ind, ss in enumerate(stimulus_start_frames):
-                frame_len = np.diff(
-                    frame_times[
-                        stimulus_start_frames[s_ind] : stimulus_end_frames[s_ind] + 1
-                    ]
-                )
+                epoch_edges = frame_times[
+                    stimulus_start_frames[s_ind] : stimulus_end_frames[s_ind] + 1
+                ]
+                frame_len = np.diff(epoch_edges)
+                all_frame_durations.append(frame_len)
                 dropped_frame_inds = (
                     np.where(np.abs(frame_len - ideal_frame_len) > self.frame_slop)[0]
                     + 1
                 )  # +1 b/c diff
-                if len(dropped_frame_inds) > 0:
+                if len(dropped_frame_inds) > 0 and len(epoch_edges) > 0:
                     dropped_frame_times.append(
-                        frame_times[ss] + dropped_frame_inds * ideal_frame_len
+                        epoch_edges[0] + dropped_frame_inds * ideal_frame_len
                     )  # time when dropped frames should have flipped
                     # print('Warning! Ch. {} Dropped {} frames in epoch {}'.format(ch, len(dropped_frame_inds), s_ind))
                 good_frame_inds = np.where(
@@ -425,6 +433,7 @@ class ImagingDataObject:
             frame_durations = np.hstack(frame_durations)  # datapoints
             measured_frame_len = np.mean(frame_durations)  # datapoints
             frame_rate = 1 / (measured_frame_len / sample_rate)  # Hz
+            all_frame_durations = np.hstack(all_frame_durations) if len(all_frame_durations) > 0 else np.array([])  # datapoints, unfiltered
 
             if plot_trace_flag:
                 frame_monitor_figure = plt.figure(figsize=(12, 8))
@@ -529,8 +538,16 @@ class ImagingDataObject:
                 "stimulus_start_times": stimulus_start_times,
                 "dropped_frame_times": dropped_frame_times,
                 "frame_rate": frame_rate,
+                "all_frame_durations": all_frame_durations,  # datapoints, unfiltered -- diagnostic only
+                "ideal_frame_len": ideal_frame_len,           # datapoints
+                "sample_rate": sample_rate,                   # Hz
+                "up_to_up_intervals": up_to_up_intervals,           # datapoints, diagnostic only
+                "down_to_down_intervals": down_to_down_intervals,   # datapoints, diagnostic only
             }
             channel_timing.append(new_dict)
+
+        if len(channel_timing) == 1:  # Only one photodiode trace recorded, use it regardless of timing_channel_ind
+            return channel_timing[0]
 
         return channel_timing[self.timing_channel_ind]
 
