@@ -27,7 +27,7 @@ import h5py
 
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
-experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS261/fly_010' #string to folder containing fly.hdf5 file
+experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS261/fly_009' #string to folder containing fly.hdf5 file
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
 roi_set_name = 'roi_set_name' # name of roi group to be analyzed (default 'roi_set_name')
@@ -50,6 +50,19 @@ save_hdf5 = 'True'#string "True" or "False", default = "False"
 # analyze_data_strf_noizone
 filter_length = '5' #string, STRF filter length in seconds
 monitor_hz = '' #string, monitor refresh rate override in Hz, leave '' to use ImagingDataObject default (120 Hz)
+
+# average_strf_noizone -- separate final step, reads the STRFs already in the
+# hdf5, so it can be re-run on its own while tuning these without recomputing
+# filters or regenerating any per-roi figures
+align_channel = 'ch1' #string, channel supplying the RF centroid; its shift is applied to every channel
+z_threshold = 'ch1:6,ch2:3.5' #string, one number for all channels or per channel as "ch1:3.0,ch2:4.5". ALL must pass
+centroid_frac = '0.5' #string, centroid uses cells above this fraction of each roi's own peak
+min_roi_per_area = '3' #string, grid points backed by fewer rois than this are masked
+crop_frac_of_max = '0' #string, DISPLAY ONLY: figures crop to where coverage reaches this
+                         #fraction of the best achieved. lower = wider axes, more thin edges shown
+grid_step_deg = '' #string, output grid spacing in deg; leave '' to auto-pick from the roi count
+                   #(values are binned, never interpolated -- a finer grid than the bars is
+                   # resolvable because roi centroids sit at different sub-bar phases)
 
 
 #%% PROCESS_DATA
@@ -134,4 +147,24 @@ if monitor_hz != '':
     command += ' --monitor_hz ' + monitor_hz
 
 os.system(command)
+
+
+#%% AVERAGE_STRF_NOIZONE (final step)
+# Registers each roi's filter to its own RF centroid and averages. Standalone:
+# re-run this alone to retune thresholds without touching anything upstream.
+
+tag = 'final' #string "raw" or "final"
+
+average_strf_path = str(os.path.join(base_path,'average_strf_noizone.py'))
+
+os.system('python ' + average_strf_path
+                + ' --experiment_file_directory ' + experiment_file_directory
+                + ' --tag ' + tag
+                + ' --align_channel ' + align_channel
+                + ' --z_threshold "' + z_threshold + '"'
+                + ' --centroid_frac ' + centroid_frac
+                + ' --min_roi_per_area ' + min_roi_per_area
+                + ' --crop_frac_of_max ' + crop_frac_of_max
+                + (' --grid_step_deg ' + grid_step_deg if grid_step_deg else '')
+                + ' --save_figs ' + save_figs)
 # %%
