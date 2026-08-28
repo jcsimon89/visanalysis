@@ -32,7 +32,11 @@ from visanalysis.util.noise_stim import (
     is_noizone, resolve_noizone_epoch_noise_params,
     resolve_noizone_series_mesh_shape, load_bar_stim_1d,
 )
+from visanalysis.util import bleach, nullcal
 from visanalysis.util.frame_timing import reconstruct_displayed_frame_indices
+from visanalysis.util.strf_plot import (
+    _pole_label, _panel_size, _grid_shape, _tighten,
+)
 import h5py
 
 plt.ioff()
@@ -43,19 +47,6 @@ plt.ioff()
 _ffmpeg_path = os.path.join(os.path.dirname(sys.executable), 'Library', 'bin', 'ffmpeg.exe')
 if os.path.exists(_ffmpeg_path):
     plt.rcParams['animation.ffmpeg_path'] = _ffmpeg_path
-
-
-def _pole_label(rtz):
-    """Axis label for a bar orientation. The position axis is 90 - psi, where
-    psi is the angle from that orientation's pole axis a_hat = (cos rtz,
-    sin rtz, 0): the anterior-posterior axis at rtz=0, the dorsal-ventral axis
-    at rtz=90. Zero is the projector's optical axis (straight lateral);
-    positive is anterior at rtz=0 and dorsal at rtz=90."""
-    if abs(rtz % 180) < 1e-6:
-        return 'Anterior (+) / posterior (-)'
-    if abs(rtz % 180 - 90) < 1e-6:
-        return 'Dorsal (+) / ventral (-)  [= elevation]'
-    return f'Position from rtz={rtz:.0f}deg pole'
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -96,6 +87,22 @@ def compute_strf_1d(trials, n_roi, filter_length_s, pre_time=0.0):
     t_lag    : (n_lags,)  -- lag axis in seconds (0 = simultaneous, + = past)
     """
     n_positions = trials[0]['stim_1d'].shape[1]
+    # stim_dt is the RAW display frame period (see the caller), so the lag axis
+    # is deliberately oversampled: a noise image is held for noisetau ms, so
+    # only filter_length_s / noisetau lags are independent. That is intentional
+    # -- raw resolution is what makes the per-frame dropped-frame correction in
+    # the caller exact, and the extra points interpolate rather than duplicate
+    # because hold boundaries drift relative to the imaging clock.
+    #
+    # Two consequences to remember when reading the output:
+    #   1. the kernel is smeared along tau by the stimulus autocorrelation,
+    #      which for sample-and-hold is a TRIANGLE of half-width noisetau
+    #      (hold = boxcar applied to a white sequence; its autocorrelation is
+    #      boxcar (x) boxcar). It is symmetric, so it does NOT shift latency,
+    #      and at typical noisetau it is small next to the indicator kernel.
+    #   2. n_lags overstates the degrees of freedom by ~noisetau / lag_dt.
+    #      Nothing here depends on that, but see peak_z_and_sign in
+    #      average_strf_noizone.py, where it interacts with the z threshold.
     lag_dt = min(t['stim_dt'] for t in trials)
     n_lags = max(1, int(np.round(filter_length_s / lag_dt)))
     t_lag = np.arange(n_lags) * lag_dt
@@ -149,14 +156,34 @@ def compute_strf_1d(trials, n_roi, filter_length_s, pre_time=0.0):
 def combine_strf_2d(strf_h, strf_v):
     """
     Combine two 1D STRFs from orthogonal orientations (separated by 90 deg)
-    into a 2D STRF via outer product, assuming a separable (rank-1) receptive
-    field.
+    into a 2D STRF, assuming a separable (rank-1) receptive field.
 
-    For each time lag: 2D spatial map = outer(strf_h[:, lag], strf_v[:, lag]).
-    NOT normalized per lag -- relative magnitude across lags is preserved, so
-    callers should pick a single color scale (e.g. the max magnitude across
-    all lags) per ROI at plot time, rather than each lag being independently
-    rescaled here (which would make a weak lag look as strong as a peak one).
+    POLARITY
+    --------
+    A bare outer product cannot represent the receptive field's sign. For a
+    separable field RF = A * f(p) * g(q), the marginals the 1D STRFs estimate
+    are A*f*(int g) and A*g*(int f), so their product carries A SQUARED -- it
+    comes out positive wherever the two marginals share a sign, regardless of
+    whether that shared sign was + or -. An OFF-centre RF, whose 1D filters are
+    both NEGATIVE at the centre, therefore appears as a strong POSITIVE peak in
+    2D. That is a sign error, not a property of the data.
+
+    The fix follows from the same algebra. With
+        T = int int RF = the sum of either marginal
+    we have outer(marginal_h, marginal_v) = RF * T exactly, so
+
+        RF = outer(marginal_h, marginal_v) / T
+
+    Dividing by T restores polarity AND relative scale, but is unstable
+    wherever T ~ 0 -- a balanced centre-surround integrates to nothing -- which
+    would blow up at weak lags. So only sign(T) is applied here, per
+    (roi, lag): polarity is corrected, and the magnitude behaviour callers
+    already scale their colour maps against is left alone.
+
+    Both marginals estimate the same T up to a positive factor, so sign(T)
+    computed from each must agree. Where it does not, separability is failing
+    at that lag (or SNR is too low to tell) and the polarity is genuinely
+    undetermined -- returned as `ambiguous` rather than silently resolved.
 
     Parameters
     ----------
@@ -166,13 +193,22 @@ def combine_strf_2d(strf_h, strf_v):
 
     Returns
     -------
-    strf_2d : (n_roi, n_pos_h, n_pos_v, n_lags)
+    strf_2d   : (n_roi, n_pos_h, n_pos_v, n_lags)
+    polarity  : (n_roi, n_lags)      the sign applied, +1 / -1
+    ambiguous : (n_roi, n_lags) bool the two marginals disagreed on sign(T)
     """
     n_lags = min(strf_h.shape[2], strf_v.shape[2])
     strf_h = strf_h[:, :, :n_lags]
     strf_v = strf_v[:, :, :n_lags]
 
-    return np.einsum('rpl,rql->rpql', strf_h, strf_v)
+    total_h = strf_h.sum(axis=1)              # (n_roi, n_lags) ~ T up to +ve scale
+    total_v = strf_v.sum(axis=1)
+    polarity = np.sign(total_h)
+    polarity[polarity == 0] = 1.0
+    ambiguous = np.sign(total_h) != np.sign(total_v)
+
+    strf_2d = np.einsum('rpl,rql->rpql', strf_h, strf_v)
+    return strf_2d * polarity[:, None, None, :], polarity, ambiguous
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -186,6 +222,12 @@ if __name__ == '__main__':
     parser.add_argument('--show_figs', nargs='?', default='False')
     parser.add_argument('--save_figs', nargs='?', default='False')
     parser.add_argument('--tag', nargs='?', default='raw')
+    parser.add_argument('--null_shifts', nargs='?', type=int, default=4,
+                        help='circular-shift null draws per group; 0 disables. '
+                             'Costs (n+1)x the STRF computation. See util.nullcal.')
+    parser.add_argument('--bleach', nargs='?', default='auto',
+                        help="bleach correction on raw F: 'auto' (default, applied when the "
+                             "epoch is long enough), 'on', or 'off'. See util.bleach.")
     parser.add_argument('--dff', nargs='?', default='pre')
     parser.add_argument('--filter_length', nargs='?', type=float, default=5.0,
                         help='STRF filter length in seconds')
@@ -198,6 +240,10 @@ if __name__ == '__main__':
     experiment_file_directory = args.experiment_file_directory
     rig = args.rig
     dff = args.dff
+    # bleach correction acts on RAW F before dF/F -- see util.bleach for why it
+    # must be multiplicative and why 'auto' skips short epochs rather than raising.
+    bleach_mode = {'auto': 'auto', 'on': True, 'off': False}[str(args.bleach).lower()]
+    null_shifts = int(args.null_shifts)
     filter_length_s = args.filter_length
 
     show_figs = args.show_figs == 'True'
@@ -263,7 +309,7 @@ if __name__ == '__main__':
     run_parameters = {}
     acquisition_metadata = {}
     volume_frame_offsets = {}
-    noise_series_info = {}   # sn -> {'dmp', 'dmt', 'epochs': [{'bin_path', 'rtz', 'noisetau'}, ...]}
+    noise_series_info = {}   # sn -> {'mesh_shape', 'epochs': [{'bin_path','rtz','noisetau'}]}
 
     for current_series in series_num:
         current_series_int = int(current_series)
@@ -289,24 +335,11 @@ if __name__ == '__main__':
         # re-read per epoch. Raises if the series ever lists more than one.
         series_mesh_shape = resolve_noizone_series_mesh_shape(run_parameters[sn])
 
-        # dmp/dmt (screen grid dimensions) and bar width are expected constant
-        # across a series; rtz/noisetau/bin_path can legitimately vary per
-        # epoch (e.g. interleaved orientations), so those are kept as a
-        # per-epoch list, not checked here.
-        dmp_values = {int(ep['dmp']) for ep in epoch_noise_params}
-        dmt_values = {int(ep['dmt']) for ep in epoch_noise_params}
-        width_values = {float(ep['width']) for ep in epoch_noise_params}
-        if len(dmp_values) > 1 or len(dmt_values) > 1 or len(width_values) > 1:
-            raise ValueError(
-                f'{sn}: expected dmp/dmt/width to be constant across all epochs, '
-                f'found dmp={sorted(dmp_values)}, dmt={sorted(dmt_values)}, '
-                f'width={sorted(width_values)}.'
-            )
-
+        # Screen dimensions and bar geometry are no longer read from epoch
+        # attrs -- each movie's master is authoritative and is loaded per
+        # bin_path below. rtz/noisetau/bin_path can legitimately vary per epoch
+        # (e.g. interleaved orientations), so those stay a per-epoch list.
         noise_series_info[sn] = {
-            'dmp': dmp_values.pop(),
-            'dmt': dmt_values.pop(),
-            'width': width_values.pop(),
             'mesh_shape': series_mesh_shape,
             'epochs': [
                 {'bin_path': ep['bin_path'], 'rtz': float(ep['rtz']),
@@ -322,9 +355,10 @@ if __name__ == '__main__':
             ch = 'ch' + current_channel
             response_set_name = response_set_name_prefix + ch
             _t0 = time.perf_counter()
-            roi_data[sn, ch] = ID.getRoiResponses(response_set_name,
-                                                   roi_prefix='aligned',
-                                                   dff=dff)
+            roi_data[sn, ch] = bleach.roi_responses(ID, response_set_name,
+                                                    roi_prefix='aligned',
+                                                    dff=dff,
+                                                    correct_bleach=bleach_mode)
             print(f'    [timing] {sn} {ch}: getRoiResponses took {time.perf_counter() - _t0:.2f}s')
 
     if not noise_series_info:
@@ -338,8 +372,7 @@ if __name__ == '__main__':
         unique_rtz = sorted({e['rtz'] for e in info['epochs']})
         unique_noisetau = sorted({e['noisetau'] for e in info['epochs']})
         unique_files = sorted({pathlib.Path(e['bin_path']).name for e in info['epochs']})
-        print(f'  {sn}: dmt={info["dmt"]}  dmp={info["dmp"]}  '
-              f'{n_epochs} epochs  rtz values={unique_rtz}  '
+        print(f'  {sn}: {n_epochs} epochs  rtz values={unique_rtz}  '
               f'noisetau values={unique_noisetau} ms  '
               f'{len(unique_files)} unique bin file(s)  '
               f'display mesh={info["mesh_shape"]}')
@@ -352,22 +385,23 @@ if __name__ == '__main__':
     strf_results = {}
     stim_1d_cache = {}   # (bin_path, mesh_shape) -> (stim_1d, bar_pos_deg, meta)
 
-    def get_cached_stim_1d(bin_path, width_deg, mesh_shape):
-        # The exact per-bar noise sequence, read from the movie's bar-data .mat
-        # sidecar (vals, bar_idx -- cmake_noizone.m:52). Each bar is one
+    def get_cached_stim_1d(bin_path, mesh_shape):
+        # The exact per-bar noise sequence, from the movie's noiz1d master
+        # (_master.json + _values.bin + _barindex.bin). Each bar is one
         # regressor, so there is no projection or binning step and nothing is
-        # approximated. vals is stored post-repelem, i.e. already at native raw
-        # display-frame resolution, so per-trial dropped-frame correction below
-        # still applies at the true raw-frame level. Cached per bin_path: each
-        # movie has exactly one rtz, so there is no rtz dependence.
+        # approximated. Bar width, phase, pole, pose and timebase all come from
+        # the master, so nothing is re-derived from filenames or params.json.
+        # Values are expanded to raw display-frame resolution on load, so the
+        # dropped-frame correction below still applies at the true raw-frame
+        # level. Cached per bin_path: one movie, one orientation.
         key = (bin_path, mesh_shape)
         if key not in stim_1d_cache:
             _t0 = time.perf_counter()
             stim_1d, bar_pos_deg, meta = load_bar_stim_1d(
-                bin_path, width_deg, mesh_shape=mesh_shape)
+                bin_path, mesh_shape=mesh_shape)
             print(f'    [timing] load_bar_stim_1d took {time.perf_counter() - _t0:.2f}s '
                   f'-> stim_1d shape={stim_1d.shape}, '
-                  f'bars {meta["bar_index"].min()}-{meta["bar_index"].max()}, '
+                  f'bars {meta["bar_index"].min()}-{meta["bar_index"].max()} @ {meta["bar_width_deg"]:g} deg, '
                   f'position axis {bar_pos_deg[0]:+.1f} to {bar_pos_deg[-1]:+.1f} deg')
             _shift = meta['clip_shift_deg'] + meta['mesh_shift_deg']
             print(f'    [geometry] mesh {meta["mesh_shape"]}: bar position correction '
@@ -378,9 +412,7 @@ if __name__ == '__main__':
         return stim_1d_cache[key]
 
     for sn, info in noise_series_info.items():
-        dmt, dmp = info['dmt'], info['dmp']
-        width_deg = info['width']   # bar PERIOD; a bar is half of it (cmake_noizone.m:6)
-        mesh_shape = info['mesh_shape']
+        mesh_shape = info['mesh_shape']   # all bar geometry comes from the master
         epochs = info['epochs']
 
         pre_time = float(run_parameters[sn].get('pre_time', 0.0))
@@ -471,7 +503,7 @@ if __name__ == '__main__':
                 if trial_ind >= epoch_response.shape[1]:
                     break
                 stim_1d, bar_pos_deg, _bar_meta = get_cached_stim_1d(
-                    ep['bin_path'], width_deg, mesh_shape)
+                    ep['bin_path'], mesh_shape)
                 group_position_info[ep['rtz'], ep['noisetau']] = bar_pos_deg
                 tvec = time_vector_by_epoch[trial_ind]
 
@@ -521,10 +553,55 @@ if __name__ == '__main__':
                 strf, strf_raw, t_lag = compute_strf_1d(trials, n_roi, filter_length_s, pre_time)
                 print(f'    [timing] compute_strf_1d ({sn} {ch} rtz={rtz} noisetau={noisetau}ms, '
                       f'{len(trials)} trial-roi entries) took {time.perf_counter() - _t0:.2f}s')
+                # Circular-shift null. Rolling the stimulus destroys the
+                # pairing while keeping its autocorrelation and the response's
+                # own structure, so peak |z| under it is the right reference
+                # for "does this ROI respond at all". Costs (n+1)x this
+                # computation; what gets STORED is only the per-ROI p-value and
+                # the threshold, so q stays adjustable downstream and no null
+                # arrays go into the h5.
+                null_p, null_thr = None, None
+                if null_shifts > 0:
+                    # from the trials, not the loop variable: raw_stim_dt is
+                    # bound inside the epoch loop above and would otherwise
+                    # carry whatever the LAST epoch set
+                    _sdt = float(trials[0]['stim_dt'])
+
+                    def _shifted(shift_s, _tr=trials, _sdt=_sdt):
+                        k = int(round(shift_s / _sdt))
+                        # roll ONCE per distinct stimulus array: it is shared
+                        # across every ROI's trial dict, so rolling per trial
+                        # would copy the same array hundreds of times
+                        _rolled = {}
+                        for t in _tr:
+                            if id(t['stim_1d']) not in _rolled:
+                                _rolled[id(t['stim_1d'])] = np.roll(
+                                    t['stim_1d'], k, axis=0)
+                        return compute_strf_1d(
+                            [dict(t, stim_1d=_rolled[id(t['stim_1d'])])
+                             for t in _tr],
+                            n_roi, filter_length_s, pre_time)[0]
+                    _dur = trials[0]['stim_1d'].shape[0] * _sdt
+                    _t1 = time.perf_counter()
+                    _cal = nullcal.calibrate(
+                        _shifted,
+                        nullcal.shifts_for(_dur, filter_length_s, null_shifts))
+                    _z = nullcal.peak_z(strf)
+                    null_p = np.full(n_roi, np.nan)
+                    _ok = np.isfinite(_z)
+                    null_p[_ok] = nullcal.pvalues(_z[_ok], _cal['null'])[0]
+                    null_thr = _cal['threshold']
+                    print('    [timing] null ({} shifts) took {:.2f}s; '
+                          'threshold {:.2f}'.format(
+                              null_shifts, time.perf_counter() - _t1, null_thr))
+
                 strf_results[sn, ch, rtz, noisetau] = {
                     'strf': strf,
                     'strf_raw': strf_raw,
                     't_lag': t_lag,
+                    'null_p': null_p,
+                    'null_threshold': null_thr,
+                    'null_shifts': null_shifts,
                     'rtz': rtz,
                     'noisetau': noisetau,
                     'bar_pos_deg': group_position_info[rtz, noisetau],
@@ -579,13 +656,18 @@ if __name__ == '__main__':
             res_h, sn_h = group_results[theta]
             res_v, sn_v = group_results[partner]
             t_lag = res_h['t_lag']
-            strf_2d = combine_strf_2d(res_h['strf'], res_v['strf'])
+            strf_2d, polarity, ambiguous = combine_strf_2d(res_h['strf'], res_v['strf'])
             n_lags_2d = strf_2d.shape[3]
             strf_2d_results[sn_h, sn_v, ch, noisetau, theta, partner] = {
                 'strf_2d': strf_2d, 't_lag': t_lag[:n_lags_2d],
                 'bar_pos_h_deg': res_h['bar_pos_deg'],
                 'bar_pos_v_deg': res_v['bar_pos_deg'],
+                'polarity': polarity, 'polarity_ambiguous': ambiguous,
             }
+            n_off = int((polarity < 0).sum())
+            print(f'    [polarity] {n_off}/{polarity.size} (roi, lag) entries are '
+                  f'OFF-sign and were inverted; {int(ambiguous.sum())} ambiguous '
+                  f'(the two marginals disagreed on sign)')
             print(f'\n{sn_h}(rtz={theta}) + {sn_v}(rtz={partner})  {ch} noisetau={noisetau}ms: '
                   f'2D STRF shape {strf_2d.shape}  (n_roi, n_pos_h, n_pos_v, n_lags)')
 
@@ -613,6 +695,8 @@ if __name__ == '__main__':
             g2.create_dataset('t_lag',   data=res['t_lag'])
             g2.create_dataset('bar_pos_h_deg', data=res['bar_pos_h_deg'])
             g2.create_dataset('bar_pos_v_deg', data=res['bar_pos_v_deg'])
+            g2.create_dataset('polarity', data=res['polarity'])
+            g2.create_dataset('polarity_ambiguous', data=res['polarity_ambiguous'])
             g2.attrs['rtz_h'] = theta
             g2.attrs['rtz_v'] = partner
 
@@ -638,7 +722,7 @@ if __name__ == '__main__':
         vmax = np.abs(strf).max() or 1.0
 
         for roi_ind in range(n_roi):
-            fig_name = f'strf_1d_{ori_label}_noisetau{int(noisetau)}_{ch}_{sn}_{tag}_roi_{roi_ind}'
+            fig_name = f'strf_1d_{ori_label}_noisetau{int(noisetau)}_{ch}_{sn}_{tag}_roi_{roi_ind}_'
             fh, ax = plt.subplots(figsize=(4, 4), constrained_layout=True)
             im = ax.imshow(
                 strf[roi_ind],           # (n_positions, n_lags)
@@ -674,11 +758,12 @@ if __name__ == '__main__':
         peak_lag_ms  = t_lag[peak_lag_idx] * 1000
 
         for roi_ind in range(n_roi_2d):
-            fig_name = f'strf_2d_peak_lag_noisetau{int(noisetau)}_rtz{int(theta)}_{int(partner)}_{sn_h}_{sn_v}_{ch}_{tag}_roi_{roi_ind}'
+            fig_name = f'strf_2d_peak_lag_noisetau{int(noisetau)}_rtz{int(theta)}_{int(partner)}_{sn_h}_{sn_v}_{ch}_{tag}_roi_{roi_ind}_'
             # single color scale across all lags for this ROI (not just this
             # panel's lag), so peak-lag/subset/movie figures are comparable
             vmax = np.abs(strf_2d[roi_ind]).max() or 1.0
-            fh, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+            fh, ax = plt.subplots(figsize=_panel_size(extent_2d, 4.2),
+                                  constrained_layout=True)
             # rows = h-group bar position, cols = v-group bar position, both
             # in true visual-angle degrees -- aspect='equal' with a
             # degrees-based extent keeps equal spacing = equal true visual
@@ -708,7 +793,7 @@ if __name__ == '__main__':
     # showing every lag gets unreadable for long filter_length/fine noisetau
     # (e.g. 5s / 50ms = 100 lags), so a fixed number of evenly-spaced lags are
     # shown instead, regardless of the total lag count.
-    n_display_lags = 16
+    n_display_lags = 24
     for (sn_h, sn_v, ch, noisetau, theta, partner), res in strf_2d_results.items():
         strf_2d = res['strf_2d']   # (n_roi, n_pos_h, n_pos_v, n_lags)
         t_lag   = res['t_lag']
@@ -719,14 +804,17 @@ if __name__ == '__main__':
         lag_idxs = np.unique(np.linspace(0, n_lags - 1, min(n_display_lags, n_lags)).round().astype(int))
 
         for roi_ind in range(n_roi_2d):
-            fig_name = f'strf_2d_lags_noisetau{int(noisetau)}_rtz{int(theta)}_{int(partner)}_{sn_h}_{sn_v}_{ch}_{tag}_roi_{roi_ind}'
+            fig_name = f'strf_2d_lags_noisetau{int(noisetau)}_rtz{int(theta)}_{int(partner)}_{sn_h}_{sn_v}_{ch}_{tag}_roi_{roi_ind}_'
             # single color scale across all lags for this ROI, not per panel
             vmax = np.abs(strf_2d[roi_ind]).max() or 1.0
-            n_cols = min(len(lag_idxs), 8)
-            n_rows = int(np.ceil(len(lag_idxs) / n_cols))
+            # Grid and panel size both follow the data aspect, so panels sit
+            # flush instead of each image being letterboxed inside a 4x2 box.
+            n_rows, n_cols = _grid_shape(len(lag_idxs), extent_2d)
+            pw, ph = _panel_size(extent_2d, 1.7)
             fh, axes = plt.subplots(n_rows, n_cols,
-                                    figsize=(4 * n_cols, 2 * n_rows),
+                                    figsize=(pw * n_cols, ph * n_rows + 0.35),
                                     constrained_layout=True)
+            _tighten(fh)
             axes_flat = np.array(axes).flatten()
             for panel_ind, lag_idx in enumerate(lag_idxs):
                 ax = axes_flat[panel_ind]
@@ -738,9 +826,13 @@ if __name__ == '__main__':
                     cmap='RdBu_r',
                     vmin=-vmax, vmax=vmax,
                 )
-                ax.set_title(f'{t_lag[lag_idx]*1000:.0f} ms', fontsize=8)
+                ax.text(0.03, 0.97, f'{t_lag[lag_idx]*1000:.0f} ms',
+                        transform=ax.transAxes, ha='left', va='top', fontsize=7,
+                        bbox=dict(fc='white', ec='none', alpha=0.75, pad=1))
                 ax.set_xticks([])
                 ax.set_yticks([])
+                for _s in ax.spines.values():
+                    _s.set_visible(False)
             for ax in axes_flat[len(lag_idxs):]:
                 ax.set_visible(False)
             plt.suptitle(f'2D STRF ({len(lag_idxs)} of {n_lags} lags)  {sn_h}+{sn_v}  {ch}  '
@@ -763,7 +855,7 @@ if __name__ == '__main__':
     #     n_roi_2d, _, _, n_lags = strf_2d.shape
     #
     #     for roi_ind in range(n_roi_2d):
-    #         fig_name = f'strf_2d_all_lags_noisetau{int(noisetau)}_rtz{int(theta)}_{int(partner)}_{sn_h}_{sn_v}_{ch}_{tag}_roi_{roi_ind}'
+    #         fig_name = f'strf_2d_all_lags_noisetau{int(noisetau)}_rtz{int(theta)}_{int(partner)}_{sn_h}_{sn_v}_{ch}_{tag}_roi_{roi_ind}_'
     #         n_cols = min(n_lags, 8)
     #         n_rows = int(np.ceil(n_lags / n_cols))
     #         fh, axes = plt.subplots(n_rows, n_cols,
@@ -806,7 +898,7 @@ if __name__ == '__main__':
     #         continue
     #
     #     for roi_ind in range(n_roi_1d):
-    #         fig_name = f'strf_1d_movie_rot{int(rot)}_noisetau{int(noisetau)}_{ch}_{sn}_{tag}_roi_{roi_ind}'
+    #         fig_name = f'strf_1d_movie_rot{int(rot)}_noisetau{int(noisetau)}_{ch}_{sn}_{tag}_roi_{roi_ind}_'
     #         fh, ax = plt.subplots(figsize=(5, 4), constrained_layout=True)
     #         positions = np.arange(n_positions)
     #         bars = ax.bar(positions, strf[roi_ind, :, 0], color='k')
@@ -845,11 +937,12 @@ if __name__ == '__main__':
             continue
 
         for roi_ind in range(n_roi_2d):
-            fig_name = f'strf_2d_movie_noisetau{int(noisetau)}_rtz{int(theta)}_{int(partner)}_{sn_h}_{sn_v}_{ch}_{tag}_roi_{roi_ind}'
+            fig_name = f'strf_2d_movie_noisetau{int(noisetau)}_rtz{int(theta)}_{int(partner)}_{sn_h}_{sn_v}_{ch}_{tag}_roi_{roi_ind}_'
             # single color scale across all lags, so a weak lag doesn't get
             # rendered as if it were as strong as the peak lag
             vmax = np.abs(strf_2d[roi_ind]).max() or 1.0
-            fh, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+            fh, ax = plt.subplots(figsize=_panel_size(extent_2d, 4.2),
+                                  constrained_layout=True)
             im = ax.imshow(
                 strf_2d[roi_ind, :, :, 0],
                 aspect='equal',
