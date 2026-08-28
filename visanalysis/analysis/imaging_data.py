@@ -403,21 +403,68 @@ class ImagingDataObject:
             frame_durations = []
             all_frame_durations = []  # every measured interval, unfiltered (diagnostic)
             dropped_frame_times = []
+            anomalous_frame_times = []  # flagged intervals that lost no frame (jitter)
             for s_ind, ss in enumerate(stimulus_start_frames):
                 epoch_edges = frame_times[
                     stimulus_start_frames[s_ind] : stimulus_end_frames[s_ind] + 1
                 ]
                 frame_len = np.diff(epoch_edges)
                 all_frame_durations.append(frame_len)
-                dropped_frame_inds = (
-                    np.where(np.abs(frame_len - ideal_frame_len) > self.frame_slop)[0]
-                    + 1
-                )  # +1 b/c diff
-                if len(dropped_frame_inds) > 0 and len(epoch_edges) > 0:
-                    dropped_frame_times.append(
-                        epoch_edges[0] + dropped_frame_inds * ideal_frame_len
-                    )  # time when dropped frames should have flipped
-                    # print('Warning! Ch. {} Dropped {} frames in epoch {}'.format(ch, len(dropped_frame_inds), s_ind))
+
+                # Which intervals are longer (or shorter) than one frame should be.
+                bad = np.where(np.abs(frame_len - ideal_frame_len) > self.frame_slop)[0]
+
+                # How MANY frames each anomalous interval swallowed. A run of consecutive
+                # drops produces ONE interval of n+1 frame lengths, not n intervals, so
+                # counting anomalous intervals undercounts every multi-frame drop -- a
+                # 4-frame stall was reported as a single dropped frame.
+                #
+                # Clamped at 0, not at 1. An interval flagged by frame_slop but under 1.5
+                # ideal lengths skipped no frame: it is jitter, or a spurious edge, which
+                # makes the interval SHORTER than ideal. Forcing those to 1 would not just
+                # over-report them, it would shift every later slot in the epoch by one and
+                # corrupt the timing of every genuine drop after it.
+                n_missing = np.maximum(
+                    np.round(frame_len[bad] / ideal_frame_len).astype(int) - 1, 0
+                )
+                # Anomalous intervals that lost no frame. Reported separately rather than
+                # dropped on the floor, since they still say something is wrong with the
+                # trace, but they must not enter the slot accounting.
+                anomalous_frame_times.append(epoch_edges[bad[n_missing == 0]])
+                bad = bad[n_missing > 0]
+                n_missing = n_missing[n_missing > 0]
+
+                if len(bad) > 0 and len(epoch_edges) > 0:
+                    # Place each missing frame by interpolating between the two edges that
+                    # bracket its gap, rather than by counting frame lengths from the start
+                    # of the epoch.
+                    #
+                    # The old version used `epoch_edges[0] + edge_index * ideal_frame_len`,
+                    # which conflates edge index with frame slot. They agree only until the
+                    # first drop: after k frames have gone missing, observed edge i is slot
+                    # i + k, so every dropped-frame time after the first was early by
+                    # k x ideal_frame_len and the error accumulated across the epoch.
+                    #
+                    # Tracking a running slot offset instead would fix that case and break
+                    # two others. A spurious edge shifts the count the other way, and
+                    # per-interval rounding does not compose -- two intervals of half a
+                    # frame each round to zero slots apiece but to one slot together.
+                    # Anchoring on absolute time is no better: at the 119.74 Hz this rig
+                    # actually runs against a nominal 120, a 300 s epoch drifts by ~76
+                    # frames, so a slot computed from elapsed time would be nonsense by the
+                    # end of it.
+                    #
+                    # Interpolation is local, so it inherits none of that. It also degrades
+                    # gracefully if the frame clock is slightly off, because it measures the
+                    # gap it is subdividing rather than assuming its length.
+                    times = np.concatenate([
+                        epoch_edges[i]
+                        + (epoch_edges[i + 1] - epoch_edges[i])
+                        * np.arange(1, n + 1) / (n + 1)
+                        for i, n in zip(bad, n_missing)
+                    ])
+                    dropped_frame_times.append(times)
+                    # print('Warning! Ch. {} Dropped {} frames in epoch {}'.format(ch, int(n_missing.sum()), s_ind))
                 good_frame_inds = np.where(
                     np.abs(frame_len - ideal_frame_len) <= self.frame_slop
                 )[0]
@@ -429,6 +476,9 @@ class ImagingDataObject:
                 dropped_frame_times = np.hstack(dropped_frame_times)  # datapoints
             else:
                 dropped_frame_times = np.array(dropped_frame_times)
+            anomalous_frame_times = (np.hstack(anomalous_frame_times)
+                                     if len(anomalous_frame_times) > 0
+                                     else np.array([]))
 
             frame_durations = np.hstack(frame_durations)  # datapoints
             measured_frame_len = np.mean(frame_durations)  # datapoints
@@ -524,6 +574,11 @@ class ImagingDataObject:
                 )
                 total_frames = len(frame_times)
                 dropped_frames = len(dropped_frame_times)
+                if len(anomalous_frame_times) > 0:
+                    print(
+                        "{} interval(s) off by more than frame_slop but losing no frame "
+                        "(jitter or spurious edges)".format(len(anomalous_frame_times))
+                    )
                 print(
                     "Dropped {} / {} frames ({:.2f}%)".format(
                         dropped_frames,
