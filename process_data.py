@@ -21,7 +21,7 @@ from visanalysis.analysis import imaging_data
 from visanalysis.util import plot_tools
 from visanalysis.util import h5io
 from visanalysis.util.noise_stim import (
-    is_flymax_movie, get_epoch_bin_filename, find_bin_files, load_stim_params_json,
+    is_flymax_movie, get_epoch_bin_filename, find_bin_files, resolve_movie_params,
     resolve_attrs_to_write, unique_values,
 )
 
@@ -185,12 +185,13 @@ if __name__ == '__main__':
             len(needed_filenames), flymax_movies_root))
         bin_paths = find_bin_files(flymax_movies_root, needed_filenames)
 
+        # Resolve each movie's params from whichever sidecar it ships: noiz1d
+        # movies carry a <base>_master.json and NO params.json, legacy noizone
+        # and the Edge/Flash movies carry a _params.json. resolve_movie_params
+        # prefers the master where both exist.
         params_cache = {}  # bin_path -> params dict (loaded once per unique file)
         for bin_path in set(bin_paths.values()):
-            params_json = load_stim_params_json(bin_path)
-            if params_json is None:
-                raise FileNotFoundError('No _params.json sidecar found next to {}'.format(bin_path))
-            params_cache[bin_path] = params_json
+            params_cache[bin_path] = resolve_movie_params(bin_path)
 
         def _cache_movie_attrs(target_file_name, target_file_path):
             """
