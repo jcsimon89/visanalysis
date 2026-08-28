@@ -7,7 +7,6 @@ import json
 import pathlib
 
 import numpy as np
-import scipy.io
 
 
 def _decode(x):
@@ -119,17 +118,25 @@ def get_epoch_bin_filename(epoch_params):
     return epoch_params['movie_bin_name'] + '.bin'
 
 
-NOISE_PARAM_KEYS = ('bin_path', 'dmp', 'dmt', 'rtz', 'noisetau', 'width')
+NOISE_PARAM_KEYS = ('bin_path', 'rtz', 'noisetau')
 
 
 def resolve_noizone_epoch_noise_params(epoch_params):
     """
-    Return this epoch's noise-stimulus params (bin_path, dmp, dmt, rtz,
-    noisetau), cached onto the epoch by process_data.py.
+    Return this epoch's noise-stimulus params, cached onto the epoch by
+    process_data.py.
+
+    Only three are needed now: bin_path locates the movie's master, and
+    rtz/noisetau group epochs into filters. Everything else about the stimulus
+    -- bar width, phase, pole, pose, phimx, dm, timebase -- is read from the
+    master itself, which is authoritative. In particular the legacy 'width'
+    epoch attr is deliberately NOT required or used: it is a square-wave
+    PERIOD, while the master's bar_geometry.width_deg is the width of one BAR,
+    and conflating them is what produced a silent 2x error before.
 
     Raises KeyError if any are missing -- process_data.py (with
-    --flymax_movies_root) must be run for this fly before this script, for
-    any noizone series. No fallback resolution strategy here on purpose.
+    --flymax_movies_root) must be run for this fly first. No fallback
+    resolution strategy here on purpose.
     """
     missing = [k for k in NOISE_PARAM_KEYS if k not in epoch_params]
     if missing:
@@ -138,6 +145,62 @@ def resolve_noizone_epoch_noise_params(epoch_params):
             f'Run process_data.py (with --flymax_movies_root) for this fly first.'
         )
     return {k: epoch_params[k] for k in NOISE_PARAM_KEYS}
+
+
+def movie_params_from_master(bin_path):
+    """
+    Epoch attrs for a movie that ships a noiz1d master instead of a params.json.
+
+    noiz1d_make.m writes <base>_master.json / _values.bin / _barindex.bin and
+    NO _params.json, so process_data.py cannot resolve such a movie the legacy
+    way. This maps the master onto the same attr names downstream code expects.
+
+    Deliberately does NOT emit a 'width' key. The legacy params.json 'width' is
+    a square-wave PERIOD; the master's is a single BAR. Reusing the name would
+    hand the old 2x trap to anyone reading epoch attrs, so the bar width is
+    exported under its own unambiguous name and the analysis takes it from the
+    master regardless.
+
+    Returns None if there is no master next to the .bin.
+    """
+    try:
+        mp = find_master(bin_path)
+    except FileNotFoundError:
+        return None
+    m = json.loads(mp.read_text())
+    dmp, dmt = (int(v) for v in m['render']['dm'])
+    return {
+        'stimtype': 'NoizOne',
+        'master_file': mp.name,
+        'dmp': dmp,
+        'dmt': dmt,
+        'rtz': float(m['bar_geometry']['orientation_deg']),
+        'noisetau': float(m['timebase']['tau_actual_ms']),
+        'bar_width_deg': float(m['bar_geometry']['width_deg']),
+        'bar_phase_deg': float(m['bar_geometry']['phase_deg']),
+        'num_bars': int(m['bar_geometry']['num_bars']),
+        'noisedur': float(m['timebase']['duration_actual_s']) / 60.0,
+    }
+
+
+def resolve_movie_params(bin_path):
+    """
+    Stimulus params for any flymax movie, from whichever sidecar it ships.
+
+    noiz1d movies carry a master; legacy noizone and the Edge/Flash movies
+    carry a _params.json. Master wins when both exist, since it is the
+    generator's own complete specification rather than a summary.
+    """
+    from_master = movie_params_from_master(bin_path)
+    if from_master is not None:
+        return from_master
+    params_json = load_stim_params_json(bin_path)
+    if params_json is None:
+        raise FileNotFoundError(
+            'No sidecar found next to {}: expected either a noiz1d '
+            '<base>_master.json or a legacy <base>_params.json.'.format(
+                pathlib.Path(bin_path).name))
+    return params_json
 
 
 def mesh_shape_from_path(mesh_path):
@@ -409,9 +472,20 @@ def mesh_warp_directions(dmp, dmt, mesh_shape=(7, 31), screen='s'):
     return _MESH_WARP_CACHE[key]
 
 
-def bar_psi_from_direction(phi, theta, rtz):
-    """psi, the angle from a bar orientation's pole axis (cos rtz, sin rtz, 0)."""
-    return np.degrees(np.arccos(np.clip(np.sin(phi) * np.cos(theta - np.deg2rad(rtz)), -1.0, 1.0)))
+def bar_psi_from_direction(phi, theta, pole_out):
+    """
+    psi (deg): the angle between each movie direction and the bar pole axis.
+
+    pole_out is the pole as a unit vector in the OUTPUT (movie) frame -- i.e.
+    P @ pole_fly, using the master's own pose matrix. Taking the pole as a
+    vector rather than as an rtz angle means any screen pose works, not just
+    the default one. The angle itself is frame-independent, so this equals the
+    master's `beta`.
+    """
+    p = np.asarray(pole_out, dtype=float).ravel()
+    sp = np.sin(phi)
+    cosb = sp * np.cos(theta) * p[0] + sp * np.sin(theta) * p[1] + np.cos(phi) * p[2]
+    return np.degrees(np.arccos(np.clip(cosb, -1.0, 1.0)))
 
 
 def _weighted_bar_centroid(bar_idx, psi, weight):
@@ -423,7 +497,7 @@ def _weighted_bar_centroid(bar_idx, psi, weight):
             for bi in range(1, n) if tot_w[bi] > 0}
 
 
-def effective_bar_psi(bar_idx, rtz, mesh_shape=(7, 31), screen='s'):
+def effective_bar_psi(bar_idx, pole_out, mesh_shape=(7, 31), screen='s'):
     """
     Solid-angle-weighted psi centroid of each bar, in degrees -- both as
     actually displayed and as it would be with a perfect display mesh.
@@ -434,7 +508,9 @@ def effective_bar_psi(bar_idx, rtz, mesh_shape=(7, 31), screen='s'):
     covers on the sphere, so the result is the centroid of the region the eye
     integrated over rather than of the texture grid.
 
-    Two separate effects move a bar away from its nominal (bar - 0.5)*width/2:
+    pole_out is the bar pole in the output frame (P @ pole_fly from the master).
+
+    Two separate effects move a bar away from its nominal phase + (bar-0.5)*width:
 
       * CLIPPING -- bars at the edge of the projector cap are only partly
         displayed, so the centroid of the visible part is pulled inward. This
@@ -461,24 +537,23 @@ def effective_bar_psi(bar_idx, rtz, mesh_shape=(7, 31), screen='s'):
     w_disp = np.where(lit, np.sin(phi_r) * det_j, 0.0)
     w_geom = np.where(lit, np.sin(phi_i), 0.0)      # identity warp, det_j = 1
 
-    return (_weighted_bar_centroid(bar_idx, bar_psi_from_direction(phi_r, th_r, rtz), w_disp),
-            _weighted_bar_centroid(bar_idx, bar_psi_from_direction(phi_i, th_i, rtz), w_geom))
+    return (_weighted_bar_centroid(bar_idx, bar_psi_from_direction(phi_r, th_r, pole_out), w_disp),
+            _weighted_bar_centroid(bar_idx, bar_psi_from_direction(phi_i, th_i, pole_out), w_geom))
 
 
-def find_bardata_mat(bin_path, bardata_dir=None):
+def find_master(bin_path, bardata_dir=None):
     """
-    Locate a noizone movie's bar-data .mat sidecar.
+    Locate a movie's noiz1d master JSON.
 
-    cmake_noizone.m saves it as fn_base + '.mat', and fn_base lacks the
-    trailing underscore the .bin filename carries (namefile.m:41 strips it),
-    so '..._001_.bin' -> '..._001.mat'.
+    noiz1d_make.m names it fn_base + '_master.json', where fn_base lacks the
+    trailing underscore the .bin filename carries (namefile.m:41 strips it), so
+    '..._001_.bin' -> '..._001_master.json'.
 
-    Looked for next to the .bin first, so a natively generated sidecar is
-    picked up with no configuration. bardata_dir is an optional fallback for
-    sidecars recovered after the fact and kept elsewhere.
+    Looked for next to the .bin first, so a natively generated master is picked
+    up with no configuration. bardata_dir is an optional fallback.
     """
     bin_path = pathlib.Path(bin_path)
-    name = bin_path.stem.rstrip('_') + '.mat'
+    name = bin_path.stem.rstrip('_') + '_master.json'
     candidates = [bin_path.parent / name]
     if bardata_dir is not None:
         candidates.append(pathlib.Path(bardata_dir) / name)
@@ -486,95 +561,137 @@ def find_bardata_mat(bin_path, bardata_dir=None):
         if c.exists():
             return c
     raise FileNotFoundError(
-        'No bar-data .mat found for {}; looked in {}. For movies generated '
-        'before the stimulus code wrote this sidecar, recover it from the '
-        '.bin with recover_bardata.py.'.format(
+        'No noiz1d master found for {}; looked in {}. Movies generated before '
+        'the stimulus code wrote a master can be converted from the rendered '
+        '.bin with legacy_to_noiz1d.py.'.format(
             bin_path.name, ', '.join(str(c.parent) for c in candidates))
     )
 
 
-def load_bar_stim_1d(bin_path, width_deg, bardata_dir=None,
-                     mesh_correct=True, mesh_shape=None, screen='s', rtz=None):
+def load_noiz1d_master(bin_path, bardata_dir=None):
     """
-    Exact 1D noise regressor for a noizone movie, from its bar-data sidecar.
+    Read a noiz1d master and its two binary sidecars.
+
+    Returns (master_dict, values, bar_index):
+        values     uint8  (num_bars, num_updates)  -- one column per noise update
+        bar_index  uint16 (dmp, dmt)               -- 0 means "not displayed"
+    """
+    mp = find_master(bin_path, bardata_dir)
+    m = json.loads(mp.read_text())
+    nb, nu = (int(v) for v in m['values']['shape'])
+    values = np.fromfile(mp.parent / m['values']['file'], dtype=np.uint8).reshape(nb, nu)
+    dmp, dmt = (int(v) for v in m['render']['dm'])
+    bar_index = np.fromfile(mp.parent / m['render']['barindex_file'],
+                            dtype=np.dtype(m['render']['barindex_dtype'])).reshape(dmp, dmt)
+    return m, values, bar_index
+
+
+def load_bar_stim_1d(bin_path, bardata_dir=None,
+                     mesh_correct=True, mesh_shape=None, screen='s'):
+    """
+    Exact 1D noise regressor for a noizone / noiz1d movie, from its master.
+
+    Everything comes from the master -- bar width, phase, pole, pose, phimx and
+    the timebase -- so nothing is re-derived from filenames or params.json, and
+    the legacy "width is a PERIOD, halve it" trap cannot recur: the master's
+    bar_geometry.width_deg is already the width of ONE BAR.
+
+    values is stored per noise UPDATE; it is expanded here by frames_per_update
+    so stim_1d stays at raw display-frame resolution, which is what per-trial
+    dropped-frame correction indexes against.
 
     Only bars that actually land on the projector cap are returned -- 32 of 36
-    at rtz=0 and 22 of 36 at rtz=90 on the standard flymax screen. The rest are
-    never displayed and carry no stimulus at all.
+    at orientation 0, 22 of 36 at orientation 90 on the standard flymax screen.
 
     Position convention
     -------------------
     psi is the angle from this movie's pole axis, so psi = 0 sits at the pole,
-    well outside the lit field, not in the middle of the screen. The returned
-    axis is therefore centred on the field:
+    outside the lit field. The returned axis is centred on the field:
 
         bar_pos_deg = 90 - psi
 
-    which puts 0 at the projector's optical axis (straight lateral) and makes
-    the axis signed and symmetric: roughly +-77 deg at rtz=0, +-52 deg at
-    rtz=90. Positive is anterior at rtz=0 and dorsal at rtz=90; at rtz=90 it is
-    exactly elevation.
+    putting 0 at the projector's optical axis and making the axis signed and
+    symmetric. Positive is anterior at orientation 0 and dorsal at orientation
+    90; at 90 it is exactly elevation.
 
     Mesh correction
     ---------------
-    With mesh_correct=True (default) each bar is labelled with where it was
-    ACTUALLY displayed -- its solid-angle-weighted psi centroid after the
-    display mesh warp (see effective_bar_psi) -- rather than its nominal
-    (bar - 0.5) * width/2. On the 7 x 31 mesh the outermost bars sit up to
-    4.36 deg inward of nominal, 87% of a bar width, so labelling them nominally
-    misplaces them by nearly a full bar. This changes only the position axis;
-    the design matrix is untouched. Nominal positions are kept in meta.
-
-    mesh_shape is REQUIRED when mesh_correct is on -- there is no default,
-    because applying the wrong mesh's correction is worse than applying none.
-    Get it from the epoch's own saved metadata via
-    resolve_noizone_epoch_mesh_shape(), not by assumption.
+    With mesh_correct=True each bar is labelled with where it was ACTUALLY
+    displayed -- its solid-angle-weighted psi centroid after the display mesh
+    warp -- rather than its nominal phase + (bar - 0.5) * width. mesh_shape is
+    REQUIRED when it is on; read it from the series metadata with
+    resolve_noizone_series_mesh_shape().
 
     Returns
     -------
-    stim_1d     : (n_frames, n_bars_on_screen) float32, NOT mean-subtracted,
-                  one row per raw display frame
+    stim_1d     : (n_frames, n_bars_on_screen) float32, NOT mean-subtracted
     bar_pos_deg : (n_bars_on_screen,) ascending degrees, signed as above
-    meta        : dict -- 'bar_index' (the generator's 1-based bar numbers),
-                  'psi_centre_deg' (psi actually used), 'psi_nominal_deg',
-                  'mesh_shift_deg' (displayed minus nominal psi, per bar),
-                  'bar_width_deg', 'mesh_correct', 'mesh_shape', 'rtz'
+    meta        : dict -- bar_index, psi_centre_deg, psi_nominal_deg,
+                  psi_geometric_deg, clip_shift_deg, mesh_shift_deg,
+                  bar_width_deg, orientation_deg, pole_fly, mesh_correct,
+                  mesh_shape, master_path
     """
-    mat = scipy.io.loadmat(find_bardata_mat(bin_path, bardata_dir))
-    vals = mat['vals']                     # (n_bars_template, n_frames) uint8
-    bar_idx = mat['bar_idx']               # (dmp, dmt), 0 = never displayed
+    m, values, bar_index = load_noiz1d_master(bin_path, bardata_dir)
 
-    on_screen = np.unique(bar_idx[bar_idx > 0]).astype(int)       # ascending
-    stim_1d = vals[on_screen - 1, :].T.astype(np.float32)         # (n_frames, n_bars)
+    fpu = int(m['timebase']['frames_per_update'])
+    stim_full = np.repeat(values, fpu, axis=1)              # -> raw display frames
+    n_frames = int(m['timebase']['total_frames'])
+    if stim_full.shape[1] != n_frames:
+        raise ValueError(
+            'master timebase inconsistent for {}: values {} x {} expanded by {} '
+            'gives {} frames, but total_frames says {}'.format(
+                pathlib.Path(bin_path).name, values.shape[0], values.shape[1],
+                fpu, stim_full.shape[1], n_frames))
 
-    bar_width_deg = width_deg / 2.0        # width is the PERIOD; a bar is half of it
-    psi_nominal = (on_screen - 0.5) * bar_width_deg
+    # Which bars the fly actually saw. The master's bars_used is authoritative:
+    # noiz1d_make renders the FULL projector rectangle, so its bar_index is
+    # 1..num_bars everywhere and "index > 0" would wrongly admit bars that fall
+    # outside the lit frustum -- they would enter the design matrix as
+    # regressors with no corresponding visual input. Legacy converted movies are
+    # masked and carry 0 off-screen, so the fallback is correct for those.
+    bars_used = m['bar_geometry'].get('bars_used')
+    if bars_used:
+        on_screen = np.unique(np.asarray(bars_used, dtype=int))
+    else:
+        on_screen = np.unique(bar_index[bar_index > 0]).astype(int)
+    stim_1d = stim_full[on_screen - 1, :].T.astype(np.float32)
+
+    geom = m['bar_geometry']
+    bar_width_deg = float(geom['width_deg'])                # ONE bar, not a period
+    phase_deg = float(geom['phase_deg'])
+    psi_nominal = phase_deg + (on_screen - 0.5) * bar_width_deg
+
+    # the pole, rotated into the movie frame using the master's own pose, so any
+    # screen pose works rather than only the default one
+    P = np.asarray(m['pose']['matrix_P'], dtype=float).reshape(3, 3)
+    pole_out = P @ np.asarray(geom['pole_fly'], dtype=float).ravel()
 
     if mesh_correct:
         if mesh_shape is None:
             raise ValueError(
                 'mesh_correct=True requires mesh_shape -- the correction depends on '
                 'which display mesh the epoch was shown through. Read it from the '
-                'epoch metadata with resolve_noizone_epoch_mesh_shape(), or pass '
+                'series metadata with resolve_noizone_series_mesh_shape(), or pass '
                 'mesh_correct=False to skip the correction entirely.')
-        if rtz is None:
-            params = load_stim_params_json(bin_path)
-            if params is None or 'rtz' not in params:
-                raise ValueError(
-                    'mesh_correct=True needs rtz, but no params.json sidecar was '
-                    'found next to {} -- pass rtz= explicitly or set '
-                    'mesh_correct=False.'.format(pathlib.Path(bin_path).name))
-            rtz = float(params['rtz'])
-        disp, geom = effective_bar_psi(bar_idx, rtz, mesh_shape, screen)
+        # the master records the phimx the stimulus was built with; if it
+        # disagrees with this screen's geometry the correction would be applied
+        # in the wrong frame, so fail rather than silently proceed
+        phimx_master = float(m['render']['phimx_deg'])
+        phimx_here = compute_phimx_deg(screen)
+        if abs(phimx_master - phimx_here) > 0.05:
+            raise ValueError(
+                "master phimx {:.3f} deg does not match screen '{}' ({:.3f} deg) -- "
+                'wrong screen, or the master came from different rig geometry.'
+                .format(phimx_master, screen, phimx_here))
+        disp, geo = effective_bar_psi(bar_index, pole_out, mesh_shape, screen)
         psi_centre = np.array([disp[int(b)] for b in on_screen])
-        psi_geom = np.array([geom[int(b)] for b in on_screen])
+        psi_geom = np.array([geo[int(b)] for b in on_screen])
     else:
         psi_centre = psi_nominal.astype(float)
         psi_geom = psi_nominal.astype(float)
 
     bar_pos_deg = 90.0 - psi_centre
-
-    order = np.argsort(bar_pos_deg)        # keep the position axis ascending
+    order = np.argsort(bar_pos_deg)          # keep the position axis ascending
     return (stim_1d[:, order],
             bar_pos_deg[order],
             {'bar_index': on_screen[order],
@@ -584,6 +701,8 @@ def load_bar_stim_1d(bin_path, width_deg, bardata_dir=None,
              'clip_shift_deg': (psi_geom - psi_nominal)[order],
              'mesh_shift_deg': (psi_centre - psi_geom)[order],
              'bar_width_deg': bar_width_deg,
+             'orientation_deg': float(geom['orientation_deg']),
+             'pole_fly': list(geom['pole_fly']),
              'mesh_correct': mesh_correct,
-             'mesh_shape': tuple(mesh_shape),
-             'rtz': rtz})
+             'mesh_shape': tuple(mesh_shape) if mesh_shape else None,
+             'master_path': str(find_master(bin_path, bardata_dir))})
