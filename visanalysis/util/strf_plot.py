@@ -66,3 +66,32 @@ def _tighten(fig, w_pad=0.01, h_pad=0.01, wspace=0.01, hspace=0.03):
                                     wspace=wspace, hspace=hspace)
     except Exception:
         pass
+
+#: Figure text sizes, shared by every analysis script so figures from different
+#: parts of the pipeline sit next to each other without one looking shrunken.
+#: matplotlib's defaults are around 10 pt, which is small once a figure is one
+#: of hundreds in a folder or has been dropped into a slide.
+FONT_SIZES = {
+    'font.size': 16,
+    'axes.titlesize': 16,
+    'axes.labelsize': 16,
+    'xtick.labelsize': 15,
+    'ytick.labelsize': 15,
+    'legend.fontsize': 14,
+    'figure.titlesize': 17,
+}
+
+
+def apply_figure_style(sizes=None):
+    """Set the shared figure text sizes. Call once, before making figures.
+
+    matplotlib is imported HERE rather than at module scope on purpose: this
+    module is dependency-light so that average_strf_*.py can import it without
+    dragging in the analysis stack, and that property is worth keeping.
+
+    Anything a caller sets explicitly with fontsize= still wins, so a panel that
+    needs smaller text can still ask for it -- these are the defaults everything
+    else inherits.
+    """
+    import matplotlib.pyplot as plt
+    plt.rcParams.update(dict(FONT_SIZES, **(sizes or {})))
