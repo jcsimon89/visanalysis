@@ -23,9 +23,9 @@ WHY THIS IS NOT average_strf_noizone WITH DIFFERENT COLUMNS
   subtraction of positions. Subtracting azimuths would be wrong by cos(elevation)
   and the lit band reaches 51 degrees from the horizon.
 
-* Cell centres are IRREGULAR and differ between flies, because the tessellation
+* Cell centers are IRREGULAR and differ between flies, because the tessellation
   is rotated per run. There is no shared sampling grid to average on, so values
-  are binned into a common RF-centred grid -- never interpolated, exactly as the
+  are binned into a common RF-centerd grid -- never interpolated, exactly as the
   noizone path bins bar samples.
 
 * The filter being averaged is the MERGED one, which already folds both octaves
@@ -36,7 +36,7 @@ WHY THIS IS NOT average_strf_noizone WITH DIFFERENT COLUMNS
 WHAT THE AVERAGE IS AND IS NOT SAFE FOR
 ---------------------------------------
 Position is the robust part. Centroids survive even the pathological
-non-separable case to within 0.3 degrees, because centre and surround are
+non-separable case to within 0.3 degrees, because center and surround are
 concentric, so alignment is trustworthy. Polarity and apparent size read from a
 single lag are NOT: where a filter is non-separable within an octave the smear
 can change which lobe owns the peak, flipping sign and inflating size threefold.
@@ -54,9 +54,11 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from visanalysis.util.strf_plot import apply_figure_style
 import h5py
 
 plt.ioff()
+apply_figure_style()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,10 +81,10 @@ def load_octave_strf(path, tag):
             for ch in g[sn]:
                 for fib in g[sn][ch]:
                     sg = g[sn][ch][fib]
-                    if 'strf_merged' not in sg:
+                    if 'strf_unified' not in sg:
                         continue
-                    rec = {'strf_merged': sg['strf_merged'][()],
-                           'azel': sg['merged_azel_deg'][()],
+                    rec = {'strf_unified': sg['strf_unified'][()],
+                           'azel': sg['unified_azel_deg'][()],
                            't_lag': sg['t_lag'][()],
                            'peak_lag_ind': sg['peak_lag_ind'][()],
                            'octaves': {}}
@@ -98,6 +100,14 @@ def load_octave_strf(path, tag):
                                 'cell_start': int(og.attrs['cell_start']),
                                 'cell_stop': int(og.attrs['cell_stop'])}
                     out[sn, ch, fib] = rec
+    if not out:
+        # Silence here used to mean an empty average and no diagnostic: the
+        # writer was renamed and this reader was not, so every group was
+        # skipped by the `continue` above. Say so instead.
+        raise KeyError(
+            'no group under /{} contains a strf_unified dataset. Either '
+            'analyze_data_strf_octave.py has not been run on this file, or it '
+            'wrote a different name than this reader expects.'.format(group))
     return out, attrs
 
 
@@ -143,7 +153,7 @@ def rotation_carrying(a, b):
 def register_to_centroid(azel, centroid_azel):
     """Cell directions rotated so the ROI's centroid sits at (0, 0).
 
-    Returns RF-centred (az, el) in degrees. Near the origin this is a faithful
+    Returns RF-centerd (az, el) in degrees. Near the origin this is a faithful
     local coordinate; the distortion that would matter far from it is the reason
     the rotation is done on the sphere rather than by subtracting angles.
     """
@@ -189,7 +199,7 @@ def separability(block, min_cells=8):
 
 def register_average(strf, azel, centroids, include, grid_step_deg,
                      half_extent_deg, min_roi_per_bin, peak_ind):
-    """Bin each included ROI's cells by RF-centred position, then average.
+    """Bin each included ROI's cells by RF-centerd position, then average.
 
     Values are never interpolated. Each measured cell value is assigned to the
     bin its registered position falls in, and averaged WITHIN an ROI first, so a
@@ -197,8 +207,8 @@ def register_average(strf, azel, centroids, include, grid_step_deg,
     makes min_roi_per_bin count ROIs rather than samples.
     """
     edges = np.arange(-half_extent_deg, half_extent_deg + grid_step_deg, grid_step_deg)
-    centres = 0.5 * (edges[:-1] + edges[1:])
-    n = len(centres)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    n = len(centers)
     n_lags = strf.shape[2]
 
     total = np.zeros((n, n, n_lags))
@@ -235,7 +245,7 @@ def register_average(strf, azel, centroids, include, grid_step_deg,
     thin = n_roi_hit < min_roi_per_bin
     mean[thin] = np.nan
     sem[thin] = np.nan
-    return {'mean': mean, 'sem': sem, 'count': n_roi_hit, 'grid_deg': centres,
+    return {'mean': mean, 'sem': sem, 'count': n_roi_hit, 'grid_deg': centers,
             'n_roi_included': int(include.sum())}
 
 
@@ -260,14 +270,14 @@ def figure_average(res, key, out_dir, tag, t_lag, fmt='.pdf'):
                       vmin=-lim, vmax=lim, interpolation='nearest')
     ax[0].set_title('mean RF @ lag {:.2f}s   n = {} roi'.format(
         t_lag[li], res['n_roi_included']))
-    ax[0].set_xlabel('deg from RF centre (az)')
-    ax[0].set_ylabel('deg from RF centre (el)')
+    ax[0].set_xlabel('deg from RF center (az)')
+    ax[0].set_ylabel('deg from RF center (el)')
     fig.colorbar(im, ax=ax[0], fraction=0.046)
 
     im = ax[1].imshow(cnt, origin='lower', extent=ext, cmap='viridis',
                       interpolation='nearest')
     ax[1].set_title('ROIs per bin')
-    ax[1].set_xlabel('deg from RF centre (az)')
+    ax[1].set_xlabel('deg from RF center (az)')
     fig.colorbar(im, ax=ax[1], fraction=0.046)
 
     # radial profile: the summary that does not depend on choosing a lag well
@@ -285,7 +295,7 @@ def figure_average(res, key, out_dir, tag, t_lag, fmt='.pdf'):
     ax[2].plot(mid, prof, 'k', lw=1.8)
     ax[2].fill_between(mid, prof - err, prof + err, color='0.7', alpha=0.5)
     ax[2].axhline(0, color='0.6', lw=0.8)
-    ax[2].set_xlabel('deg from RF centre')
+    ax[2].set_xlabel('deg from RF center')
     ax[2].set_ylabel('mean weight')
     ax[2].set_title('radial profile')
 
@@ -350,7 +360,7 @@ if __name__ == '__main__':
     # ── per-ROI inclusion, decided once per (series, geometry) ───────────────
     results = {}
     for (sn, ch, fib), rec in sorted(data.items()):
-        strf = rec['strf_merged']
+        strf = rec['strf_unified']
         n_roi = strf.shape[0]
         oct_names = sorted(rec['octaves'], key=lambda k: rec['octaves'][k]['patch_deg'])
         align_oct = args.align_octave or oct_names[0]      # finest by default
