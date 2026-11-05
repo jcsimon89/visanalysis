@@ -434,8 +434,8 @@ def bin_average(power, coord, bins, mask=None):
     mean[count == 0] = np.nan
     std[count == 0] = np.nan
 
-    centres = 0.5 * (bins[:-1] + bins[1:])
-    return centres, mean, std, count
+    centers = 0.5 * (bins[:-1] + bins[1:])
+    return centers, mean, std, count
 
 
 def radial_spectrum(power, coords, n_bins=48, log_bins=True, f_min=None,
@@ -634,7 +634,7 @@ def spatial_autocorrelation(frames, grid, max_lag_deg=None, remove_mean=True):
     spectrum) rather than by direct pairwise correlation, which is far
     cheaper and equivalent. Normalised so zero lag is 1.
 
-    Returns (lag_x_deg, lag_y_deg, correlation) with zero lag at the centre.
+    Returns (lag_x_deg, lag_y_deg, correlation) with zero lag at the center.
     """
     a = _prepare(frames)
     nx, ny, nt = a.shape
