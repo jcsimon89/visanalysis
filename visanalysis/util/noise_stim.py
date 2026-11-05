@@ -391,7 +391,7 @@ PHIMX_DEG = compute_phimx_deg('s')     # 76.308 deg -- previously hardcoded 77.0
 #
 # With the 7 x 31 mesh used for the 2026-07-29 recordings this shifts the
 # outermost bars inward by up to 4.07 deg, 81% of a 5 deg bar. Both ends shift
-# toward the centre so they cancel in a global mean while being strongly
+# toward the center so they cancel in a global mean while being strongly
 # systematic per bar -- which is exactly what a position axis must not do.
 #
 # The displacement is almost entirely radial, but do NOT read that as "only the
@@ -606,7 +606,7 @@ def load_bar_stim_1d(bin_path, bardata_dir=None,
     Position convention
     -------------------
     psi is the angle from this movie's pole axis, so psi = 0 sits at the pole,
-    outside the lit field. The returned axis is centred on the field:
+    outside the lit field. The returned axis is centerd on the field:
 
         bar_pos_deg = 90 - psi
 
@@ -626,7 +626,7 @@ def load_bar_stim_1d(bin_path, bardata_dir=None,
     -------
     stim_1d     : (n_frames, n_bars_on_screen) float32, NOT mean-subtracted
     bar_pos_deg : (n_bars_on_screen,) ascending degrees, signed as above
-    meta        : dict -- bar_index, psi_centre_deg, psi_nominal_deg,
+    meta        : dict -- bar_index, psi_center_deg, psi_nominal_deg,
                   psi_geometric_deg, clip_shift_deg, mesh_shift_deg,
                   bar_width_deg, orientation_deg, pole_fly, mesh_correct,
                   mesh_shape, master_path
@@ -684,22 +684,22 @@ def load_bar_stim_1d(bin_path, bardata_dir=None,
                 'wrong screen, or the master came from different rig geometry.'
                 .format(phimx_master, screen, phimx_here))
         disp, geo = effective_bar_psi(bar_index, pole_out, mesh_shape, screen)
-        psi_centre = np.array([disp[int(b)] for b in on_screen])
+        psi_center = np.array([disp[int(b)] for b in on_screen])
         psi_geom = np.array([geo[int(b)] for b in on_screen])
     else:
-        psi_centre = psi_nominal.astype(float)
+        psi_center = psi_nominal.astype(float)
         psi_geom = psi_nominal.astype(float)
 
-    bar_pos_deg = 90.0 - psi_centre
+    bar_pos_deg = 90.0 - psi_center
     order = np.argsort(bar_pos_deg)          # keep the position axis ascending
     return (stim_1d[:, order],
             bar_pos_deg[order],
             {'bar_index': on_screen[order],
-             'psi_centre_deg': psi_centre[order],
+             'psi_center_deg': psi_center[order],
              'psi_nominal_deg': psi_nominal[order],
              'psi_geometric_deg': psi_geom[order],
              'clip_shift_deg': (psi_geom - psi_nominal)[order],
-             'mesh_shift_deg': (psi_centre - psi_geom)[order],
+             'mesh_shift_deg': (psi_center - psi_geom)[order],
              'bar_width_deg': bar_width_deg,
              'orientation_deg': float(geom['orientation_deg']),
              'pole_fly': list(geom['pole_fly']),
