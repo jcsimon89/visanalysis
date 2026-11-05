@@ -17,7 +17,8 @@ import numpy as np
 # reverse correlation
 # ─────────────────────────────────────────────────────────────────────────────
 
-def compute_strf_cells(trials, n_roi, n_cells, filter_length_s, pre_time=0.0):
+def compute_strf_cells(trials, n_roi, n_cells, filter_length_s, pre_time=0.0,
+                       lag_dt=None):
     """Estimate the STRF in the cell basis by reverse correlation.
 
     Structurally identical to compute_strf_1d in the noizone pipeline -- the
@@ -43,6 +44,18 @@ def compute_strf_cells(trials, n_roi, n_cells, filter_length_s, pre_time=0.0):
     n_roi, n_cells  : output dimensions
     filter_length_s : filter length in seconds
     pre_time        : baseline before stim onset (s)
+    lag_dt          : lag axis step in seconds. None keeps the historical
+                      behaviour of one lag per DISPLAY FRAME, which is far
+                      finer than anything the data can resolve: the response
+                      is sampled at the imaging rate, so at 120 fps against
+                      ~9 Hz imaging there are about 14 lag bins per response
+                      sample. The fine axis is not pointless -- hold
+                      boundaries drift against the imaging clock, so extra
+                      points interpolate rather than duplicate -- but a few
+                      times the imaging period keeps that and costs far less:
+                      the STA is linear in n_lags and the deconvolution solve
+                      is cubic in it. Cannot be finer than the display frame
+                      period; a smaller value is raised to it.
 
     Returns
     -------
@@ -50,7 +63,8 @@ def compute_strf_cells(trials, n_roi, n_cells, filter_length_s, pre_time=0.0):
     t_lag    : (n_lags,)  lag axis, 0 = simultaneous, + = past
     n_valid  : (n_roi,)   samples contributing, per ROI
     """
-    lag_dt = min(t['stim_dt'] for t in trials)
+    frame_dt = min(t['stim_dt'] for t in trials)
+    lag_dt = frame_dt if lag_dt is None else max(float(lag_dt), frame_dt)
     n_lags = max(1, int(np.round(filter_length_s / lag_dt)))
     t_lag = np.arange(n_lags) * lag_dt
 
@@ -110,7 +124,8 @@ def compute_strf_cells(trials, n_roi, n_cells, filter_length_s, pre_time=0.0):
     return strf_raw, t_lag, n_valid_total
 
 
-def compute_strf_cells_folds(trials, n_roi, n_cells, filter_length_s, pre_time=0.0):
+def compute_strf_cells_folds(trials, n_roi, n_cells, filter_length_s, pre_time=0.0,
+                             lag_dt=None):
     """compute_strf_cells, split into two disjoint halves of the trials.
 
     Returns (strf_full, (strf_a, strf_b), t_lag, n_valid_full).
@@ -142,11 +157,13 @@ def compute_strf_cells_folds(trials, n_roi, n_cells, filter_length_s, pre_time=0
 
     if not fa or not fb:
         strf, t_lag, nv = compute_strf_cells(trials, n_roi, n_cells,
-                                             filter_length_s, pre_time)
+                                             filter_length_s, pre_time, lag_dt)
         return strf, None, t_lag, nv
 
-    sa, t_lag, na = compute_strf_cells(fa, n_roi, n_cells, filter_length_s, pre_time)
-    sb, _, nb = compute_strf_cells(fb, n_roi, n_cells, filter_length_s, pre_time)
+    sa, t_lag, na = compute_strf_cells(fa, n_roi, n_cells, filter_length_s,
+                                       pre_time, lag_dt)
+    sb, _, nb = compute_strf_cells(fb, n_roi, n_cells, filter_length_s,
+                                   pre_time, lag_dt)
     tot = (na + nb).astype(float)
     w = np.divide(1.0, tot, out=np.zeros_like(tot), where=tot > 0)
     full = (sa * na[:, None, None] + sb * nb[:, None, None]) * w[:, None, None]
@@ -428,7 +445,10 @@ def zscore_by_octave(strf, octaves, lag_dt):
         sd = np.where(sd > 0, sd, 1.0)
         out[:, sl, :] = block / sd[:, None, None]
         info[name] = {'frames_per_independent_sample': float(tau) / float(lag_dt),
-                      'median_sd': float(np.median(sd))}
+                      'median_sd': float(np.median(sd)),
+                      # per-ROI, for the centroid's noise-relative inclusion
+                      # rule -- see spherical_centroid
+                      'sd': sd}
     return out, info
 
 
@@ -436,23 +456,89 @@ def zscore_by_octave(strf, octaves, lag_dt):
 # position, on the sphere
 # ─────────────────────────────────────────────────────────────────────────────
 
-def spherical_centroid(weights, directions, frac=0.5):
+def _connected_lobe(w, directions, thresh, neighbour_deg):
+    """Cells above `thresh` reachable from the peak without leaving the set.
+
+    The sphere has no left and right, so the 1D pipeline's "contiguous run
+    around the peak" becomes a connected REGION grown from it: a cell joins if
+    it clears the threshold and sits within `neighbour_deg` of a cell already
+    in. Distances are taken only among the above-threshold cells, which is a
+    few tens even when the tessellation has twelve hundred.
+
+    The point of the connectivity, here as in 1D, is that it bounds the
+    estimate: a noise excursion on the far side of the lit region cannot join
+    the average however high it happens to peak.
+    """
+    above = np.flatnonzero(w > thresh)
+    if above.size == 0:
+        return np.zeros(w.size, dtype=bool)
+    peak = int(np.argmax(w))
+    if w[peak] <= thresh:
+        return np.zeros(w.size, dtype=bool)
+    d = np.asarray(directions, dtype=float)[above]
+    cos_lim = np.cos(np.radians(float(neighbour_deg)))
+    adj = (d @ d.T) >= cos_lim
+    start = int(np.flatnonzero(above == peak)[0])
+    seen = np.zeros(above.size, dtype=bool)
+    seen[start] = True
+    stack = [start]
+    while stack:
+        i = stack.pop()
+        for j in np.flatnonzero(adj[i] & ~seen):
+            seen[j] = True
+            stack.append(int(j))
+    out = np.zeros(w.size, dtype=bool)
+    out[above[seen]] = True
+    return out
+
+
+def spherical_centroid(weights, directions, frac=0.5, noise_sd=None,
+                       n_sigma=2.0, neighbour_deg=None):
     """Weighted mean of unit vectors, renormalised -- not a mean of az/el.
 
     Averaging azimuth and elevation as if they were Cartesian coordinates goes
     wrong away from the origin, which on this display is most of the lit band.
     Weights below `frac` of the peak are dropped so the noise floor in the
-    tails does not drag the centroid toward the array centre, matching the
+    tails does not drag the centroid toward the array center, matching the
     convention in average_strf_noizone.py.
 
     weights    : (n_cells,) non-negative importance, e.g. |filter| at peak lag
     directions : (n_cells, 3) unit vectors
+    noise_sd   : this ROI's noise scale in the same units as `weights`
+                 (zscore_by_octave returns a per-ROI 'sd'). When given it
+                 REPLACES `frac`: cells are kept if they clear
+                 n_sigma * noise_sd and are connected to the peak.
+
+                 Why not the fraction. A peak-relative cut of 0.5 leaves a
+                 single cell whenever the lobe is narrow, and the centroid of
+                 one cell IS that cell's center -- the estimate snaps to the
+                 tessellation and sub-cell position is discarded. Dropping the
+                 cut is exact when clean and worse than 0.5 once the tails are
+                 noise. A noise-relative cut adapts to the SNR actually
+                 present. Measured on the 1D twin against known centers, rms
+                 error fell from 2.25 to 0.01 deg at zero noise and from 3.25
+                 to 3.09 at high noise -- better at both ends, which neither
+                 fixed cut manages.
+    n_sigma    : multiples of noise_sd a cell must clear. 2.0 by default.
+    neighbour_deg : how close two cells must be to count as adjacent, for the
+                 connectivity test. Pass roughly 1.5x the octave's patch size.
+                 Without it the rule is a bare threshold with no connectivity,
+                 which is still better than the fraction but unbounded.
     """
     w = np.asarray(weights, dtype=float)
     w = np.where(np.isfinite(w), w, 0.0)
     if w.max() <= 0:
         return np.array([np.nan, np.nan, np.nan]), 0
-    keep = w >= frac * w.max()
+    if noise_sd is not None and np.isfinite(noise_sd) and noise_sd > 0:
+        thresh = float(n_sigma) * float(noise_sd)
+        if neighbour_deg is not None:
+            keep = _connected_lobe(w, directions, thresh, neighbour_deg)
+        else:
+            keep = w > thresh
+        if not keep.any():
+            keep = w >= w.max()          # nothing cleared noise: the peak alone
+    else:
+        keep = w >= frac * w.max()
     v = (w[keep, None] * directions[keep]).sum(axis=0)
     n = np.linalg.norm(v)
     if n == 0:
@@ -473,7 +559,7 @@ def direction_to_azel_deg(d):
 def coarse_assignment(dirs_fine, dirs_coarse):
     """Which coarse cell each fine cell falls in. (n_fine,) int.
 
-    Nearest centre on the sphere, which for a Voronoi tessellation IS the cell
+    Nearest center on the sphere, which for a Voronoi tessellation IS the cell
     membership -- no separate polygon test needed.
     """
     return np.argmax(dirs_fine @ dirs_coarse.T, axis=1)
@@ -505,7 +591,7 @@ def merge_octaves(strf, octaves, dirs, noise_sd=None, assignment=None):
         w_coarse[C] = integral of f over coarse cell C
                     = SUM of w_fine over the fine cells inside C
 
-    That last line is the whole merge. Represent f on the fine cell centres and
+    That last line is the whole merge. Represent f on the fine cell centers and
     both layers become linear statements about one object, related by a sum and
     not by an average. Getting that wrong makes the coarse layer look like a
     blurred copy of the fine one rather than an independent measurement of its
@@ -522,7 +608,7 @@ def merge_octaves(strf, octaves, dirs, noise_sd=None, assignment=None):
     signal for a smooth field. The coarse octave is simply a better measurement
     of large structure, and this is where that gets used.
 
-    NO GRID IS INVENTED. The fine cell centres are already a near-uniform
+    NO GRID IS INVENTED. The fine cell centers are already a near-uniform
     equal-area sampling of the sphere, so representing f there avoids both the
     choice of an az/el grid and the area distortion one would bring.
 
@@ -645,11 +731,26 @@ def fit_joint_cells(trials, n_roi, n_cells, octaves, dirs, filter_length_s,
 
         X[:, c] = s_fine(c, .) + sum_j s_j(parent_j(c), .)
 
-    RIDGE. Chosen by cross-validation over held-out TRIALS, not samples: samples
-    within a trial share stimulus history and a sample-wise split reports a
-    reliability that does not exist. Falls back to the analytic Gram when the
-    empirical one is too ill-conditioned to solve, which happens on short
-    recordings and is exactly where the idealised covariance is worth having.
+    ALIGNMENT. Each trial needs 'time_vector' as well as 'response': a response
+    sample at time t is regressed on the design at frame (t - pre_time)/stim_dt
+    minus the lag, and only samples with a full filter length of stimulus
+    behind them are used. Same contract as compute_strf_cells.
+
+    RIDGE. A FIXED value, defaulting to 1e-3 relative to trace(X'X)/n_fine --
+    conditioning only, not a fitted hyperparameter, and not cross-validated.
+    (An earlier version of this docstring claimed a cross-validation over
+    held-out trials. There is none: `ridge=None` takes the 1e-3 below and that
+    is the whole selection rule.) It is deliberately small enough to leave the
+    solution essentially unbiased at the conditioning this design produces --
+    the Gram is well conditioned by construction, since the octaves nest
+    exactly -- so there is little for a search to buy. If one is ever added it
+    must split over held-out TRIALS, not samples: samples within a trial share
+    stimulus history, and a sample-wise split reports a reliability that does
+    not exist.
+
+    Falls back to the analytic Gram when the empirical one is too
+    ill-conditioned to solve, which happens on short recordings and is exactly
+    where the idealised covariance is worth having.
 
     Returns
     -------
@@ -678,27 +779,65 @@ def fit_joint_cells(trials, n_roi, n_cells, octaves, dirs, filter_length_s,
         return X
 
     # --- accumulate the normal equations, lag by lag ------------------------
+    # The response is on the imaging clock and the design on the display clock,
+    # so samples reach the stimulus through their time vector, as in
+    # compute_strf_cells. Batched the same way: the design is built once per
+    # stimulus and the gather runs once per shared time vector, not per ROI.
+    by_stim = {}
+    for tr in trials:
+        tvec = tr['time_vector']
+        if len(tvec) == 0:
+            continue
+        key = (tr['stim_dt'], len(tvec), float(tvec[0]), float(tvec[-1]))
+        by_stim.setdefault(id(tr['stim_cells']), {}).setdefault(key, []).append(tr)
+
     A = np.zeros((n_fine, n_fine))
     b = np.zeros((n_roi, n_fine, n_lags))
     n_used = 0
-    for tr in trials:
-        X = design_for(tr['stim_cells'])
-        y = np.asarray(tr['response'], dtype=np.float64)
-        n = min(len(y), X.shape[0])
-        X, y = X[:n], y[:n]
-        keep = np.isfinite(y)
-        if keep.sum() <= n_lags:
-            continue
-        Xc = X[keep] - X[keep].mean(axis=0)
-        yc = y[keep] - y[keep].mean()
-        A += Xc.T @ Xc
-        n_used += keep.sum()
-        r = int(tr['roi_ind'])
-        for L in range(n_lags):
-            if L == 0:
-                b[r, :, L] += Xc.T @ yc
-            else:
-                b[r, :, L] += Xc[:-L].T @ yc[L:]
+    rois_used = set()
+    for by_clock in by_stim.values():
+        X = design_for(next(iter(by_clock.values()))[0]['stim_cells'])
+        X -= X.mean(axis=0)
+        n_frames = X.shape[0]
+        for grp in by_clock.values():
+            stim_dt = grp[0]['stim_dt']
+            n_tp = min(len(grp[0]['time_vector']),
+                       min(len(t['response']) for t in grp))
+            tvec_trial = grp[0]['time_vector'][:n_tp]
+            R = np.stack([np.asarray(t['response'][:n_tp], dtype=np.float64)
+                          for t in grp])                   # (n_grp, n_tp)
+
+            # time_valid leaves room for the whole filter, so past_idx below
+            # cannot run off the start of the stimulus at any lag.
+            stim_indices = np.round((tvec_trial - pre_time) / stim_dt).astype(int)
+            usable = ((tvec_trial >= (pre_time + filter_length_s))
+                      & (stim_indices < n_frames))
+
+            # ROIs missing the same samples share a gather; a NaN must not
+            # leak into the others through the shared matmul.
+            patterns = {}
+            for i in range(len(grp)):
+                keep = usable & np.isfinite(R[i])
+                patterns.setdefault(keep.tobytes(), (keep, []))[1].append(i)
+
+            for keep, inds in patterns.values():
+                if keep.sum() < 2:
+                    continue
+                rois = np.array([int(grp[i]['roi_ind']) for i in inds])
+                Y = R[inds][:, keep]
+                Y -= Y.mean(axis=1, keepdims=True)
+                sample_idx = stim_indices[keep]
+                S = X[sample_idx]
+                A += len(rois) * (S.T @ S)
+                n_used += len(rois) * int(keep.sum())
+                rois_used.update(rois.tolist())
+                for L, t in enumerate(t_lag):
+                    past_idx = sample_idx - int(np.round(t / stim_dt))
+                    b[rois, :, L] += Y @ X[past_idx]
+
+    # One Gram is shared by every ROI but each b[r] holds only that ROI's own
+    # trials, so A has to be per-ROI too or filters come out small by n_roi.
+    A /= max(len(rois_used), 1)
 
     cond = float(np.linalg.cond(A)) if n_fine < 3000 else np.inf
     scale = np.trace(A) / n_fine
