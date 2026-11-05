@@ -14,6 +14,7 @@ import json
 import pathlib
 import numpy as np
 import matplotlib.pyplot as plt
+from visanalysis.util.strf_plot import apply_figure_style
 from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
@@ -22,7 +23,8 @@ import h5py
 import scipy.stats
 import math
 
-plt.ioff() #don't show plots unless called for with plt.show() 
+plt.ioff()
+apply_figure_style() #don't show plots unless called for with plt.show() 
 
 # call structure: python analyze_data.py --experiment_file_directory "path" --rig "rigID" --show_figs "True/False" --save_figs "True/False"
 
