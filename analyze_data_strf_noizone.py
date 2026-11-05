@@ -25,6 +25,7 @@ import pathlib
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from visanalysis.util.strf_plot import apply_figure_style
 import matplotlib.animation as animation
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
@@ -40,6 +41,7 @@ from visanalysis.util.strf_plot import (
 import h5py
 
 plt.ioff()
+apply_figure_style()
 
 # point matplotlib at the ffmpeg binary bundled with this conda env, in case
 # it's not on PATH when this script is invoked (e.g. via os.system from the
@@ -164,8 +166,8 @@ def combine_strf_2d(strf_h, strf_v):
     separable field RF = A * f(p) * g(q), the marginals the 1D STRFs estimate
     are A*f*(int g) and A*g*(int f), so their product carries A SQUARED -- it
     comes out positive wherever the two marginals share a sign, regardless of
-    whether that shared sign was + or -. An OFF-centre RF, whose 1D filters are
-    both NEGATIVE at the centre, therefore appears as a strong POSITIVE peak in
+    whether that shared sign was + or -. An OFF-center RF, whose 1D filters are
+    both NEGATIVE at the center, therefore appears as a strong POSITIVE peak in
     2D. That is a sign error, not a property of the data.
 
     The fix follows from the same algebra. With
@@ -175,7 +177,7 @@ def combine_strf_2d(strf_h, strf_v):
         RF = outer(marginal_h, marginal_v) / T
 
     Dividing by T restores polarity AND relative scale, but is unstable
-    wherever T ~ 0 -- a balanced centre-surround integrates to nothing -- which
+    wherever T ~ 0 -- a balanced center-surround integrates to nothing -- which
     would blow up at weak lags. So only sign(T) is applied here, per
     (roi, lag): polarity is corrected, and the magnitude behaviour callers
     already scale their colour maps against is left alone.
@@ -827,7 +829,7 @@ if __name__ == '__main__':
                     vmin=-vmax, vmax=vmax,
                 )
                 ax.text(0.03, 0.97, f'{t_lag[lag_idx]*1000:.0f} ms',
-                        transform=ax.transAxes, ha='left', va='top', fontsize=7,
+                        transform=ax.transAxes, ha='left', va='top', fontsize=14,
                         bbox=dict(fc='white', ec='none', alpha=0.75, pad=1))
                 ax.set_xticks([])
                 ax.set_yticks([])
@@ -871,7 +873,7 @@ if __name__ == '__main__':
     #                 cmap='RdBu_r',
     #                 vmin=-1, vmax=1,
     #             )
-    #             ax.set_title(f'{t_lag[lag_idx]*1000:.0f} ms', fontsize=8)
+    #             ax.set_title(f'{t_lag[lag_idx]*1000:.0f} ms', fontsize=14)
     #             ax.set_xticks([])
     #             ax.set_yticks([])
     #         for ax in axes_flat[n_lags:]:
