@@ -1,7 +1,7 @@
 """
 average_strf_noizone.py
 
-Register per-ROI STRFs onto a common centred axis and average them.
+Register per-ROI STRFs onto a common centerd axis and average them.
 
 A SEPARATE, FINAL STEP. It reads the STRFs that analyze_data_strf_noizone.py
 already wrote into the hdf5 and touches nothing else, so it can be re-run as
@@ -15,7 +15,7 @@ or regenerating a single per-ROI figure.
 WHY REGISTER AT ALL
 -------------------
 Each ROI sees a different part of the world, so a naive average of many sharp
-filters is one broad smear. Shifting each to a common centre first makes the
+filters is one broad smear. Shifting each to a common center first makes the
 average an estimate of the SHAPE of a typical filter. The cost is that
 retinotopic POSITION is deliberately discarded -- per-ROI centroids are saved
 separately so that can be analysed on its own.
@@ -31,9 +31,9 @@ DESIGN
   included only if its peak |z| clears the bar in ALL of them.
 
 * Centroid, not peak. The peak is one noisy sample. This is a power-weighted
-  (f^2) centre of mass over cells above --centroid_frac of that ROI's own
+  (f^2) center of mass over cells above --centroid_frac of that ROI's own
   maximum, at its own peak lag; restricting to the significant region stops the
-  noise floor in the tails dragging the centroid toward the array centre.
+  noise floor in the tails dragging the centroid toward the array center.
 
 * NO polarity flipping. Filter sign is a property of the cell type and the
   channel, so within one experiment it is constant across ROIs and flipping
@@ -54,7 +54,7 @@ DESIGN
 * Thin edges are masked. After shifting, ROIs cover different parts of the
   common grid, so points near the edges rest on fewer ROIs.
   --min_roi_per_area blanks those rather than reporting them as if they
-  were as well estimated as the centre.
+  were as well estimated as the center.
 """
 
 import argparse
@@ -66,6 +66,7 @@ import h5py
 import matplotlib
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+from visanalysis.util.strf_plot import apply_figure_style
 import numpy as np
 
 from visanalysis.util.strf_plot import (
@@ -73,6 +74,7 @@ from visanalysis.util.strf_plot import (
 )
 
 plt.ioff()
+apply_figure_style()
 
 # point matplotlib at the ffmpeg bundled with this conda env, in case it is not
 # on PATH when this is invoked from the shell wrapper. Duplicated from
@@ -170,7 +172,7 @@ def _peak_lag(f):
 
 
 def _weighted_centroid(vals, coords, frac):
-    """Power-weighted centre of mass over cells above frac * max|vals|."""
+    """Power-weighted center of mass over cells above frac * max|vals|."""
     a = np.abs(vals)
     peak = a.max()
     if not np.isfinite(peak) or peak <= 0:
@@ -496,7 +498,7 @@ def figure_1d(res, key, out_dir, tag, fmt='.pdf', crop_frac=0.5):
                         extent=[res['t_lag'][0] * 1000, res['t_lag'][-1] * 1000,
                                 grid[0], grid[-1]])
     axes[0].set_xlabel('Lag (ms)')
-    axes[0].set_ylabel(f'{_pole_label(rtz)}\nrelative to RF centre (deg)')
+    axes[0].set_ylabel(f'{_pole_label(rtz)}\nrelative to RF center (deg)')
     axes[0].axhline(0, color='k', lw=0.6, ls=':')
     plt.colorbar(im, ax=axes[0], label='mean z-score')
     _style(axes[0])
@@ -508,14 +510,14 @@ def figure_1d(res, key, out_dir, tag, fmt='.pdf', crop_frac=0.5):
     axes[1].axvline(0, color='#c0c0c0', lw=1)
     axes[1].axhline(0, color='k', lw=0.6, ls=':')
     axes[1].set_xlabel('mean z-score')
-    axes[1].set_title(f'peak lag {res["t_lag"][li]*1000:.0f} ms', fontsize=9)
+    axes[1].set_title(f'peak lag {res["t_lag"][li]*1000:.0f} ms', fontsize=14)
     _style(axes[1])
 
     pol = res.get('polarity_sign', 0)
     fh.suptitle(f'Registered mean 1D STRF   {sn} {ch}  rtz={rtz:.0f}  '
                 f'tau={nt:.0f}ms   n={res["n_roi"]} ROIs   '
                 f'channel sign {pol:+.0f} ({100*res.get("polarity_frac", 0):.0f}% agree)   '
-                f'{tag}', fontsize=10)
+                f'{tag}', fontsize=14)
     name = f'strf_1d_MEAN_rtz{int(rtz)}_noisetau{int(nt)}_{ch}_{sn}_{tag}_'
     fh.savefig(os.path.join(out_dir, name + fmt), dpi=200, transparent=True,
                bbox_inches='tight')
@@ -571,7 +573,7 @@ def figure_1d_compare(res_by_ch, key, out_dir, tag, fmt='.pdf', crop_frac=0.5):
                        vmin=-vmax, vmax=vmax,
                        extent=[t_ms[0], t_ms[-1], grid[0], grid[-1]])
         ax.axhline(0, color='k', lw=0.6, ls=':')
-        ax.set_ylabel(f'{ch}\n{_pole_label(rtz)}\nrel. RF centre (deg)', fontsize=8)
+        ax.set_ylabel(f'{ch}\n{_pole_label(rtz)}\nrel. RF center (deg)', fontsize=14)
         if i == n_ch - 1:
             ax.set_xlabel('Lag (ms)')
         else:
@@ -598,15 +600,15 @@ def figure_1d_compare(res_by_ch, key, out_dir, tag, fmt='.pdf', crop_frac=0.5):
     ax_sp.axvline(0, color='#c0c0c0', lw=1)
     ax_sp.axhline(0, color='k', lw=0.6, ls=':')
     ax_sp.set_xlabel('normalised amplitude')
-    ax_sp.set_ylabel('rel. RF centre (deg)', fontsize=8)
-    ax_sp.set_title('spatial marginal (at each channel\'s peak lag)', fontsize=8)
-    ax_sp.legend(fontsize=8, frameon=False)
+    ax_sp.set_ylabel('rel. RF center (deg)', fontsize=14)
+    ax_sp.set_title('spatial marginal (at each channel\'s peak lag)', fontsize=14)
+    ax_sp.legend(fontsize=14, frameon=False)
 
     ax_tm.axhline(0, color='#c0c0c0', lw=1)
     ax_tm.set_xlabel('Lag (ms)')
-    ax_tm.set_ylabel('normalised amplitude', fontsize=8)
-    ax_tm.set_title('temporal marginal (at each channel\'s peak position)', fontsize=8)
-    ax_tm.legend(fontsize=8, frameon=False)
+    ax_tm.set_ylabel('normalised amplitude', fontsize=14)
+    ax_tm.set_title('temporal marginal (at each channel\'s peak position)', fontsize=14)
+    ax_tm.legend(fontsize=14, frameon=False)
     for a in (ax_sp, ax_tm):
         _style(a)
         a.grid(True, color='#f0f0f0', lw=0.6)
@@ -615,7 +617,7 @@ def figure_1d_compare(res_by_ch, key, out_dir, tag, fmt='.pdf', crop_frac=0.5):
     n_roi = res_by_ch[chans[0]]['n_roi']
     fh.suptitle(f'Registered mean 1D STRF, channels compared   {sn}  rtz={rtz:.0f}  '
                 f'tau={nt:.0f}ms   n={n_roi} ROIs   {tag}\n'
-                + '     '.join(legend_bits), fontsize=9)
+                + '     '.join(legend_bits), fontsize=14)
     name = f'strf_1d_MEAN_compare_rtz{int(rtz)}_noisetau{int(nt)}_{sn}_{tag}_'
     fh.savefig(os.path.join(out_dir, name + fmt), dpi=200, transparent=True,
                bbox_inches='tight')
@@ -638,11 +640,11 @@ def figure_2d(res, key, out_dir, tag, n_display_lags=24, fmt='.pdf', crop_frac=0
               cmap=CMAP, vmin=-vmax, vmax=vmax)
     ax.axhline(0, color='k', lw=0.6, ls=':')
     ax.axvline(0, color='k', lw=0.6, ls=':')
-    ax.set_xlabel(f'{_pole_label(res["rtz_v"])}\nrel. RF centre (deg)')
-    ax.set_ylabel(f'{_pole_label(res["rtz_h"])}\nrel. RF centre (deg)')
+    ax.set_xlabel(f'{_pole_label(res["rtz_v"])}\nrel. RF center (deg)')
+    ax.set_ylabel(f'{_pole_label(res["rtz_h"])}\nrel. RF center (deg)')
     _style(ax)
     fh.suptitle(f'Registered mean 2D STRF, peak lag {t_lag[li]*1000:.0f} ms\n'
-                f'{pair} {ch} {nt_key} {rtz_key}  n={res["n_roi"]}  {tag}', fontsize=9)
+                f'{pair} {ch} {nt_key} {rtz_key}  n={res["n_roi"]}  {tag}', fontsize=14)
     name = f'strf_2d_MEAN_peak_lag_{rtz_key}_{nt_key}_{pair}_{ch}_{tag}_'
     fh.savefig(os.path.join(out_dir, name + fmt), dpi=200, transparent=True,
                bbox_inches='tight')
@@ -661,7 +663,7 @@ def figure_2d(res, key, out_dir, tag, n_display_lags=24, fmt='.pdf', crop_frac=0
         ax.imshow(mean[:, :, li], aspect='equal', origin='lower', extent=extent,
                   cmap=CMAP, vmin=-vmax, vmax=vmax)
         ax.text(0.03, 0.97, f'{t_lag[li]*1000:.0f} ms', transform=ax.transAxes,
-                ha='left', va='top', fontsize=7,
+                ha='left', va='top', fontsize=14,
                 bbox=dict(fc='white', ec='none', alpha=0.75, pad=1))
         ax.set_xticks([]); ax.set_yticks([])
         for s in ax.spines.values():
@@ -669,7 +671,7 @@ def figure_2d(res, key, out_dir, tag, n_display_lags=24, fmt='.pdf', crop_frac=0
     for ax in A[len(idxs):]:
         ax.set_visible(False)
     fh.suptitle(f'Registered mean 2D STRF  {pair} {ch} {rtz_key}  '
-                f'n={res["n_roi"]}  {tag}', fontsize=10)
+                f'n={res["n_roi"]}  {tag}', fontsize=14)
     name = f'strf_2d_MEAN_lags_{rtz_key}_{nt_key}_{pair}_{ch}_{tag}_'
     fh.savefig(os.path.join(out_dir, name + fmt), dpi=150, transparent=True,
                bbox_inches='tight')
@@ -698,8 +700,8 @@ def movie_2d(res, key, out_dir, tag, fps=MOVIE_FPS, crop_frac=0.5):
                    cmap=CMAP, vmin=-vmax, vmax=vmax)
     ax.axhline(0, color='k', lw=0.6, ls=':')
     ax.axvline(0, color='k', lw=0.6, ls=':')
-    ax.set_xlabel(f'{_pole_label(res["rtz_v"])}\nrel. RF centre (deg)')
-    ax.set_ylabel(f'{_pole_label(res["rtz_h"])}\nrel. RF centre (deg)')
+    ax.set_xlabel(f'{_pole_label(res["rtz_v"])}\nrel. RF center (deg)')
+    ax.set_ylabel(f'{_pole_label(res["rtz_h"])}\nrel. RF center (deg)')
     plt.colorbar(im, ax=ax, label='mean z-score')
     _style(ax)
     title = ax.set_title('')
@@ -719,7 +721,7 @@ def movie_2d(res, key, out_dir, tag, fps=MOVIE_FPS, crop_frac=0.5):
 def figure_inclusion(summary, thresholds, out_dir, tag, fmt='.pdf'):
     """Which ROIs made the cut, and where their receptive fields sit.
 
-    A receptive field centre is a 2D point, but each 1D STRF constrains only
+    A receptive field center is a 2D point, but each 1D STRF constrains only
     ONE axis: bars at rtz=0 say nothing about dorsal-ventral position, and
     bars at rtz=90 say nothing about anterior-posterior. So the centroid this
     script computes per orientation is a scalar -- the projection onto that
@@ -728,7 +730,7 @@ def figure_inclusion(summary, thresholds, out_dir, tag, fmt='.pdf'):
 
     Panels:
       left   -- peak |z| per channel, sorted, with each channel's threshold.
-      middle -- RF centres in 2D where both orientations exist, from pairing
+      middle -- RF centers in 2D where both orientations exist, from pairing
                 the two 1D centroids by ROI. Falls back to a 1D strip if only
                 one orientation was run.
       right  -- centroid distribution per orientation against the extent of
@@ -751,10 +753,10 @@ def figure_inclusion(summary, thresholds, out_dir, tag, fmt='.pdf'):
         axes[0].axhline(thresholds[ch], color=c, lw=1.1, ls='--')
     axes[0].set_xlabel('ROI (sorted)')
     axes[0].set_ylabel('peak |z|')
-    axes[0].set_title('inclusion (dashed = per-channel threshold)', fontsize=9)
-    axes[0].legend(fontsize=8, frameon=False)
+    axes[0].set_title('inclusion (dashed = per-channel threshold)', fontsize=14)
+    axes[0].legend(fontsize=14, frameon=False)
 
-    # ---- middle: RF centres, 2D when both orientations are available ------
+    # ---- middle: RF centers, 2D when both orientations are available ------
     by_rtz = {}
     for (sn, ch, rtz, nt), s_ in summary.items():
         by_rtz.setdefault(round(rtz % 180, 3), []).append(s_)
@@ -775,12 +777,12 @@ def figure_inclusion(summary, thresholds, out_dir, tag, fmt='.pdf'):
                         edgecolor='#b0b0b0', lw=0.8, label='excluded')
         axes[1].scatter(xa[both], xb[both], s=26, color=CH_COLORS[0],
                         alpha=0.8, label=f'included (n={int(both.sum())})')
-        axes[1].set_xlabel(f'{_pole_label(pair[0])} (deg)', fontsize=8)
-        axes[1].set_ylabel(f'{_pole_label(pair[1])} (deg)', fontsize=8)
-        axes[1].set_title('RF centres, both orientations paired', fontsize=9)
+        axes[1].set_xlabel(f'{_pole_label(pair[0])} (deg)', fontsize=14)
+        axes[1].set_ylabel(f'{_pole_label(pair[1])} (deg)', fontsize=14)
+        axes[1].set_title('RF centers, both orientations paired', fontsize=14)
         axes[1].axhline(0, color='#e0e0e0', lw=1, zorder=0)
         axes[1].axvline(0, color='#e0e0e0', lw=1, zorder=0)
-        axes[1].legend(fontsize=7, frameon=False)
+        axes[1].legend(fontsize=14, frameon=False)
     else:
         for (sn, ch, rtz, nt), s_ in summary.items():
             axes[1].plot(s_['centroid'][s_['include']],
@@ -788,8 +790,8 @@ def figure_inclusion(summary, thresholds, out_dir, tag, fmt='.pdf'):
                          'o', ms=4, alpha=0.7, label=f'rtz={rtz:.0f}')
         axes[1].set_xlabel('RF centroid (deg)')
         axes[1].set_ylabel('peak |z| (align channel)')
-        axes[1].set_title('only one orientation -- no 2D centre available', fontsize=9)
-        axes[1].legend(fontsize=7, frameon=False)
+        axes[1].set_title('only one orientation -- no 2D center available', fontsize=14)
+        axes[1].legend(fontsize=14, frameon=False)
 
     # ---- right: centroids vs the field that was actually covered ---------
     for i, ((sn, ch, rtz, nt), s_) in enumerate(sorted(summary.items())):
@@ -807,8 +809,8 @@ def figure_inclusion(summary, thresholds, out_dir, tag, fmt='.pdf'):
     axes[2].set_xlabel('RF centroid (deg)   dashed = edge of the covered field')
     axes[2].set_ylabel('ROIs')
     axes[2].set_title('centroids vs field extent'
-                      '  (piled at an edge -> truncated RFs)', fontsize=9)
-    axes[2].legend(fontsize=7, frameon=False)
+                      '  (piled at an edge -> truncated RFs)', fontsize=14)
+    axes[2].legend(fontsize=14, frameon=False)
 
     for ax in axes:
         _style(ax)
