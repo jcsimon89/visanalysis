@@ -14,6 +14,7 @@ import json
 import pathlib
 import numpy as np
 import matplotlib.pyplot as plt
+from visanalysis.util.strf_plot import apply_figure_style
 from matplotlib.widgets import LassoSelector
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
@@ -22,7 +23,8 @@ from visanalysis.util.noise_stim import is_noizone
 import h5py
 import scipy.stats
 
-plt.ioff() #don't show plots unless called for with plt.show() 
+plt.ioff()
+apply_figure_style() #don't show plots unless called for with plt.show() 
 
 # call structure: python analyze_data.py --experiment_file_directory "path" --rig "rigID" --show_figs "True/False" --save_figs "True/False"
 
@@ -302,8 +304,46 @@ if __name__ == '__main__':
 
     # figure out which series is which
 
-    search_series = 'sn' + series_num[0] #assume first series is search stim
-    print('search stim series: ' + search_series)
+    # A series qualifies as the search stim by what it IS, not by what it is not.
+    # The old rule was 'whichever series is not in NOISE_PROTOCOLS', which fails
+    # silently for any noise protocol missing from that list -- as
+    # SphericalOneDTernaryNoise was, so a fly that ran straight to 1D noise with no
+    # search stim picked the 300 s noise series AS its search stim and plotted a
+    # noise trace as a flash response. Keeping the list current is not a fix; it is
+    # the same trap reset for the next protocol.
+    #
+    # So the decision now rests on the structure the search figures actually need:
+    # at least two intensity conditions -- the light/dark flash the plots put one
+    # per row -- and a stimulus short enough to be a flash. A noise series has
+    # neither: its intensity list is empty and its stim_time is minutes. The
+    # protocol list is kept as a cheap, explicit exclusion in front of that test,
+    # not as the test itself.
+    NOISE_PROTOCOLS = ('FullFieldTernaryNoise', 'OctaveTernaryNoise',
+                       'SphericalOneDTernaryNoise', 'LogBandTernaryNoise',
+                       'ZebraNoiseSphere', 'SphericalCheckerboardWhiteNoise',
+                       'ContrastBlockUniformNoise', 'ContrastSwitchTernaryNoise')
+    MAX_SEARCH_STIM_TIME_S = 5.0
+
+    def is_search_stim(sn):
+        if str(run_parameters[sn].get('protocol_ID', '')) in NOISE_PROTOCOLS:
+            return False
+        if len(unique_intensity_values.get(sn, [])) < 2:
+            return False
+        try:
+            return (float(run_parameters[sn].get('stim_time', 0.0))
+                    <= MAX_SEARCH_STIM_TIME_S)
+        except (TypeError, ValueError):
+            return False
+
+    search_series = None
+    for current_series in series_num:
+        sn = 'sn' + current_series
+        if is_search_stim(sn):
+            search_series = sn
+            print('search stim series: ' + search_series)
+            break
+    if search_series is None:
+        print('no search stim series found - skipping its figures')
 
     # Not every fly has both flash series. Bind these up front so a missing
     # one is a skipped figure rather than a NameError at the first plot that
@@ -390,62 +430,65 @@ if __name__ == '__main__':
     #                         plt.show()
 
 
-    # plot 1: mean responses to search stimulus (series 1) - all rois plotted together
-                #2 rows (per condition (light/dark flash))
-                #2 columns (per channel)
+    if search_series is None:
+        print('skipping plots 1 and 2 - no search stim series')
+    else:
+        # plot 1: mean responses to search stimulus (series 1) - all rois plotted together
+                    #2 rows (per condition (light/dark flash))
+                    #2 columns (per channel)
 
-    #[plot_tools.cleanAxes(x) for x in ax.ravel()]
-    sn = search_series
-    fig_name = 'search_mean_response_all_{}_rois'.format(tag)
-    fig_format = '.pdf'
-    fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
-    #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
-    for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
-        ch = 'ch' + current_channel
-        for u_ind, up in enumerate(unique_intensity_values[sn]):
-            ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
-            ax[ch_ind, u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
-            ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
-            ax[ch_ind, u_ind].set_xlabel('Time (s)')
-            ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
-    plt.suptitle("search stimulus, mean response, all {} rois".format(tag))
-
-    if save_figs:
-        plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
-
-    if show_figs:
-        plt.show()
-
-    plt.close()
-
-    # plot 2: mean responses to search stimulus (series 1) - per roi
-                #2 rows (per condition (light/dark flash))
-                #2 columns (per channel)
-    sn = search_series #assume first series is search stim
-    fig_name_string = 'search_mean_response'
-    fig_format = '.pdf'
-    #[plot_tools.cleanAxes(x) for x in ax.ravel()]
-    for roi_ind in range(n_roi):
+        #[plot_tools.cleanAxes(x) for x in ax.ravel()]
+        sn = search_series
+        fig_name = 'search_mean_response_all_{}_rois'.format(tag)
+        fig_format = '.pdf'
         fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
         #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
         for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
             ch = 'ch' + current_channel
             for u_ind, up in enumerate(unique_intensity_values[sn]):
-                ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
+                ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][:, u_ind, :].T)
                 ax[ch_ind, u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
                 ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
                 ax[ch_ind, u_ind].set_xlabel('Time (s)')
                 ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
-        plt.suptitle("search stimulus, mean response, {} roi {} ".format(tag,roi_ind))
-        
+        plt.suptitle("search stimulus, mean response, all {} rois".format(tag))
+
         if save_figs:
-            fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
             plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
         if show_figs:
             plt.show()
 
         plt.close()
+
+        # plot 2: mean responses to search stimulus (series 1) - per roi
+                    #2 rows (per condition (light/dark flash))
+                    #2 columns (per channel)
+        sn = search_series
+        fig_name_string = 'search_mean_response'
+        fig_format = '.pdf'
+        #[plot_tools.cleanAxes(x) for x in ax.ravel()]
+        for roi_ind in range(n_roi):
+            fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
+            #[x.set_ylim([-0.2, 0.2]) for x in ax.ravel()] # better way to set ax limits???  could find max of mean_responses for example
+            for ch_ind, current_channel in enumerate(func_channels_num): #loop through channels        
+                ch = 'ch' + current_channel
+                for u_ind, up in enumerate(unique_intensity_values[sn]):
+                    ax[ch_ind, u_ind].plot(roi_data[sn,ch]['time_vector'], mean_response[sn,ch][roi_ind, u_ind, :].T)
+                    ax[ch_ind, u_ind].set_title('Ch{}, Flash Intensity = {}'.format(current_channel,up))
+                    ax[ch_ind, u_ind].set_ylabel('Mean Response (dF/F)')
+                    ax[ch_ind, u_ind].set_xlabel('Time (s)')
+                    ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+            plt.suptitle("search stimulus, mean response, {} roi {} ".format(tag,roi_ind))
+        
+            if save_figs:
+                fig_name = fig_name_string + '_roi_{}_'.format(roi_ind)
+                plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+
+            if show_figs:
+                plt.show()
+
+            plt.close()
     
     
 
@@ -668,35 +711,39 @@ if __name__ == '__main__':
 
             plt.close()
 
-    # plot 11: combined mean response (search stim) - combined mean of all final rois
-    if tag == 'final':
-        sn = search_series
-        fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
-        fig_name = 'combined_mean_responses_search_stim_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
-        fig_format = '.pdf' 
-        fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
-        for ch_ind, current_channel in enumerate(func_channels_num):
-            ch = 'ch' + current_channel
-            for u_ind, up in enumerate(unique_intensity_values[sn]):
-                x = roi_data[sn,ch]['time_vector']
-                y = np.mean(mean_response[sn,ch][:, u_ind, :],0).T
-                error = scipy.stats.sem(mean_response[sn,ch][:, u_ind, :],0).T
-                ax[ch_ind, u_ind].plot(x, y, color = 'k')
-                ax[ch_ind, u_ind].fill_between(x, y-error, y+error, color = 'c', alpha = 0.3)
-                ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
-                ax[ch_ind, u_ind].set_xlabel('Time (s)')
-                ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
-                ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
-        plt.suptitle('combined mean response, {} Flash, all {} rois'.format(fig_stim_time,tag))
+    if search_series is None:
+        print('skipping plot 11 - no search stim series')
+    else:
+        # plot 11: combined mean response (search stim) - combined mean of all final rois
+        if tag == 'final':
+            sn = search_series
+            fig_stim_time = str(int(1000*run_parameters[sn]['stim_time'])) + 'ms'
+            fig_name = 'combined_mean_responses_search_stim_flash_{}_all_{}_rois'.format(fig_stim_time,tag) #convert from s to ms
+            fig_format = '.pdf' 
+            fh, ax = plt.subplots(len(func_channels_num), len(unique_intensity_values[sn]), figsize=(12, 12*(9/16)),constrained_layout = True, squeeze=False)
+            for ch_ind, current_channel in enumerate(func_channels_num):
+                ch = 'ch' + current_channel
+                for u_ind, up in enumerate(unique_intensity_values[sn]):
+                    x = roi_data[sn,ch]['time_vector']
+                    y = np.mean(mean_response[sn,ch][:, u_ind, :],0).T
+                    error = scipy.stats.sem(mean_response[sn,ch][:, u_ind, :],0).T
+                    ax[ch_ind, u_ind].plot(x, y, color = 'k')
+                    ax[ch_ind, u_ind].fill_between(x, y-error, y+error, color = 'c', alpha = 0.3)
+                    ax[ch_ind, u_ind].set_ylabel('Response (dF/F)')
+                    ax[ch_ind, u_ind].set_xlabel('Time (s)')
+                    ax[ch_ind, u_ind].set_title('Ch{}, {} Flash, Intensity = {}'.format(current_channel,fig_stim_time,up))
+                    ax[ch_ind, u_ind].axvspan(run_parameters[sn]['pre_time'], run_parameters[sn]['pre_time'] + run_parameters[sn]['stim_time'], color='gray', alpha=0.2)
+            plt.suptitle('combined mean response, {} Flash, all {} rois'.format(fig_stim_time,tag))
 
-        if save_figs:
-            plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
+            if save_figs:
+                plt.savefig(os.path.join(figs_dir,fig_name + fig_format), dpi=400, transparent=True)
 
-        if show_figs:
-            plt.show()
+            if show_figs:
+                plt.show()
 
-        plt.close()  
+            plt.close()  
     
+
     if short_flash_series is None:
         print('skipping plot 12 - no 25ms flash series')
     else:
