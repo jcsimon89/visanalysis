@@ -89,9 +89,9 @@ def _generator():
     return _gen, _tess
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # series / epoch identification
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def is_octave_ternary(run_parameters):
     """True if a series ran the octave ternary protocol.
@@ -167,9 +167,9 @@ def resolve_octave_epoch_meta(epoch_params):
     return meta, sampling
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # reconstruction
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def load_octave_cells(meta, n_frames, frame_indices=None):
     """Exact cell values at raw display-frame resolution.
@@ -217,9 +217,27 @@ def cell_directions(meta):
     wrong near the edges of the lit band, which is exactly where it matters.
     """
     _, tess = _generator()
-    fib_seed = int(meta['fibonacci_seed'])
-    return np.vstack([tess.fibonacci_directions(int(n), fib_seed)
-                      for n in meta['n_cells']])
+    rot = int(meta['rotation_seed'])
+    return np.vstack([tess.healpix_directions(int(ns), rot)
+                      for ns in meta['nsides']])
+
+
+def coarse_parents(meta, j_fine, j_coarse):
+    """Which cell of octave `j_coarse` contains each cell of octave `j_fine`.
+
+    EXACT, and a bit shift: HEALPix nests, so a fine pixel lies wholly inside
+    one coarse pixel and its parent is `pix >> 2` per level. Under the previous
+    Fibonacci tessellation this had to be a nearest-center guess
+    (octave_strf.coarse_assignment) and was wrong for a large minority of
+    cells -- measured, 39% of 6 deg cells straddled an 11 deg boundary, with a
+    median of only 76% of a fine cell lying inside the parent it was assigned
+    to. That approximation is now gone, along with its bias.
+    """
+    ns_f, ns_c = int(meta['nsides'][j_fine]), int(meta['nsides'][j_coarse])
+    if ns_c > ns_f:
+        raise ValueError('j_coarse must be the coarser octave')
+    shift = 2 * int(np.log2(ns_f // ns_c))
+    return np.arange(12 * ns_f * ns_f) >> shift
 
 
 def cell_azel_deg(meta):
@@ -255,9 +273,9 @@ def display_scale(meta):
     return float(meta['clip_k'])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # temporal: the one place a correction is genuinely needed
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def hold_autocorr(tau, lag_dt, n_lags):
     """exp(-|lag|/tau) sampled on the lag axis, normalised to 1 at zero lag.
@@ -307,12 +325,12 @@ def visible_cells(meta, sampling):
     degrees -- entirely outside the lit region.
 
     Membership is tested in patch coordinates rather than by az/el bounds, so
-    it stays correct when the patch is not centred on the origin.
+    it stays correct when the patch is not centerd on the origin.
     """
     d = cell_directions(meta)
     az0 = np.radians(float(sampling['center_az_deg']))
     el0 = np.radians(float(sampling['center_el_deg']))
-    # rotate the patch centre onto +x, the same convention the display uses
+    # rotate the patch center onto +x, the same convention the display uses
     ca, sa = np.cos(-az0), np.sin(-az0)
     Rz = np.array([[ca, -sa, 0.0], [sa, ca, 0.0], [0.0, 0.0, 1.0]])
     ce, se = np.cos(-el0), np.sin(-el0)
