@@ -171,7 +171,9 @@ def select_rois(filt, cal, method='auto', q=0.05, noise_frac=0.3):
         keep_ok, cut = benjamini_hochberg(p, q=q)
         keep = np.flatnonzero(ok)[keep_ok] if len(keep_ok) else np.array([], int)
         info.update(meta, method_used='fdr', p_cutoff=float(cut),
-                    threshold=float(np.min(z[keep])) if len(keep) else np.nan)
+                    threshold=float(np.min(z[keep])) if len(keep) else np.nan,
+                    threshold_kind='min z of kept ROIs; descriptive only, '
+                                   'the cutoff is on p, not on z')
         if len(keep) <= resolvable:
             info['warning'] = (
                 'surviving set ({}) is at or below what {} shift(s) can resolve '
@@ -180,6 +182,9 @@ def select_rois(filt, cal, method='auto', q=0.05, noise_frac=0.3):
     else:
         keep = np.flatnonzero(ok & (z >= cal['threshold']))
         info.update(method_used='percentile', threshold=float(cal['threshold']),
+                    threshold_kind='{:g}th percentile of the null; a real '
+                                   'cutoff on z'.format(
+                                       cal.get('percentile', 95.0)),
                     reason='min_detectable_k={} > n_roi={}'.format(resolvable, m))
 
     filt = np.asarray(filt)
