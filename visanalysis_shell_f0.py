@@ -74,11 +74,13 @@ channel_num = '1,2 1,2'
 # note: first series and chennel listed will be used for roi selection
 
 #%% PROCESS_DATA
+import sys; sys.path.insert(0, base_path) if base_path not in sys.path else None
+from visanalysis.util.cellrun import run_cmd   # prints output into THIS cell
 
 
 process_data_path = str(os.path.join(base_path,'process_data_f0.py'))
 
-os.system('python ' + process_data_path
+run_cmd('python ' + process_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --run_gui ' + run_gui

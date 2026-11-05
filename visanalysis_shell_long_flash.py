@@ -58,11 +58,13 @@ save_hdf5 = 'True'#string "True" or "False", default = "False"
 
 
 #%% PROCESS_DATA
+import sys; sys.path.insert(0, base_path) if base_path not in sys.path else None
+from visanalysis.util.cellrun import run_cmd   # prints output into THIS cell
 
 
 process_data_path = str(os.path.join(base_path,'process_data.py'))
 
-os.system('python ' + process_data_path
+run_cmd('python ' + process_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --series_number ' + series_number_for_roi_selection
@@ -73,13 +75,15 @@ os.system('python ' + process_data_path
 
 
 #%% ANALYZE_DATA RAW
+import sys; sys.path.insert(0, base_path) if base_path not in sys.path else None
+from visanalysis.util.cellrun import run_cmd   # prints output into THIS cell
 
 
 tag = 'raw' #string "raw" or "final"
 
 analyze_data_path = str(os.path.join(base_path,'analyze_data_long_flash.py'))
 
-os.system('python ' + analyze_data_path
+run_cmd('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
@@ -89,11 +93,13 @@ os.system('python ' + analyze_data_path
 
 
 #%% SELECT_FINAL_ROIS
+import sys; sys.path.insert(0, base_path) if base_path not in sys.path else None
+from visanalysis.util.cellrun import run_cmd   # prints output into THIS cell
 input_tag = ''
 output_tag = 'final'
 select_rois_path = str(os.path.join(base_path,'select_rois.py'))
 
-os.system('python ' + select_rois_path
+run_cmd('python ' + select_rois_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --save ' + save_hdf5
@@ -102,6 +108,8 @@ os.system('python ' + select_rois_path
 
 
 #%% ANALYZE_DATA FINAL
+import sys; sys.path.insert(0, base_path) if base_path not in sys.path else None
+from visanalysis.util.cellrun import run_cmd   # prints output into THIS cell
 
 
 tag = 'final' #string "raw" or "final"
@@ -109,7 +117,7 @@ dff = 'pre' #string "pre", "mean", or "none", default = "pre"
 
 analyze_data_path = str(os.path.join(base_path,'analyze_data_long_flash.py'))
 
-os.system('python ' + analyze_data_path
+run_cmd('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs

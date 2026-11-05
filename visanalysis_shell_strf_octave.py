@@ -21,7 +21,7 @@ import os
 
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
-experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS261/fly_012' #string to folder containing fly.hdf5 file
+experiment_file_directory = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/JS140_x_JS261/fly_018' #string to folder containing fly.hdf5 file
 rig = 'Bruker' #string "Bruker" or "AODscope"
 
 roi_set_name = 'roi_set_name' # name of roi group to be analyzed (default 'roi_set_name')
@@ -62,11 +62,13 @@ deconvolve = 'False' #string "True" or "False". OFF by default, and that is the 
 
 
 #%% PROCESS_DATA
+import sys; sys.path.insert(0, base_path) if base_path not in sys.path else None
+from visanalysis.util.cellrun import run_cmd   # prints output into THIS cell
 
 
 process_data_path = str(os.path.join(base_path, 'process_data.py'))
 
-os.system('python ' + process_data_path
+run_cmd('python ' + process_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --series_number ' + series_number_for_roi_selection
@@ -78,13 +80,15 @@ os.system('python ' + process_data_path
 
 
 #%% ANALYZE_DATA RAW
+import sys; sys.path.insert(0, base_path) if base_path not in sys.path else None
+from visanalysis.util.cellrun import run_cmd   # prints output into THIS cell
 
 
 tag = 'raw' #string "raw" or "final"
 
 analyze_data_path = str(os.path.join(base_path, 'analyze_data.py'))
 
-os.system('python ' + analyze_data_path
+run_cmd('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
@@ -94,11 +98,13 @@ os.system('python ' + analyze_data_path
 
 
 #%% SELECT_FINAL_ROIS
+import sys; sys.path.insert(0, base_path) if base_path not in sys.path else None
+from visanalysis.util.cellrun import run_cmd   # prints output into THIS cell
 input_tag = ''
 output_tag = 'final'
 select_rois_path = str(os.path.join(base_path, 'select_rois.py'))
 
-os.system('python ' + select_rois_path
+run_cmd('python ' + select_rois_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --save ' + save_hdf5
@@ -107,6 +113,8 @@ os.system('python ' + select_rois_path
 
 
 #%% ANALYZE_DATA FINAL
+import sys; sys.path.insert(0, base_path) if base_path not in sys.path else None
+from visanalysis.util.cellrun import run_cmd   # prints output into THIS cell
 
 
 tag = 'final' #string "raw" or "final"
@@ -114,7 +122,7 @@ dff = 'pre' #string "pre", "mean", or "none", default = "pre"
 
 analyze_data_path = str(os.path.join(base_path, 'analyze_data.py'))
 
-os.system('python ' + analyze_data_path
+run_cmd('python ' + analyze_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --show_figs ' + show_figs
@@ -124,13 +132,15 @@ os.system('python ' + analyze_data_path
 
 
 #%% ANALYZE_DATA_STRF_OCTAVE FINAL
+import sys; sys.path.insert(0, base_path) if base_path not in sys.path else None
+from visanalysis.util.cellrun import run_cmd   # prints output into THIS cell
 # uses the final rois selected above; auto-detects the octave ternary series within
 # the fly by protocol_ID, so the series number is not hard-coded here.
 #
 # Unlike the noizone path there is no movie to locate: the stimulus is regenerated
 # from the epoch metadata, so this block needs nothing on disk beyond the hdf5.
 
-tag = 'final' #string "raw" or "final"
+tag = 'raw' #string "raw" or "final"
 dff = 'pre' #string "pre", "mean", or "none", default = "pre"
 
 analyze_data_strf_path = str(os.path.join(base_path, 'analyze_data_strf_octave.py'))
@@ -151,5 +161,5 @@ if lam != '':
 if deconvolve == 'True':
     command += ' --deconvolve'
 
-os.system(command)
+run_cmd(command)
 # %%
