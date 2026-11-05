@@ -24,13 +24,13 @@ of that texture, not the whole thing.
 
 The window is there because the spectral tools are planar: they assume one pixel subtends one
 constant solid angle. A GlSphericalTexturedRect's texel grid is linear in (theta, phi), which is
-locally equal-angle at the patch centre and increasingly compressed away from it -- a step of
+locally equal-angle at the patch center and increasingly compressed away from it -- a step of
 d(theta) subtends d(theta)*sin(phi). Over the default 40 degree window the worst corner is off by
 1 - sin(70 deg) = 6%, which is small against the things being read off these plots. Over the full
 136 x 102 degree patch it would be 36%, which is not, and it would show up as spurious anisotropy.
 
 So: the stimulus is the real one, the analysis is honest for the middle of it, and anything read
-here is a statement about the stimulus near the centre of gaze.
+here is a statement about the stimulus near the center of gaze.
 """
 import argparse
 import sys
@@ -125,8 +125,8 @@ def analysis_windows(frames, p, window_deg=24.0, n_az=4, n_el=3, max_gradient=0.
     The spectral tools are planar: they assume a pixel subtends a constant solid angle. On a
     (theta, phi) texel grid a texel spans a constant d(phi) in elevation but d(theta)*sin(phi)
     in azimuth, so the azimuthal scale depends on WHERE you look. One 40 degree window at the
-    centre handled that by staying where sin(phi) ~ 1; small windows handle it better, because
-    each gets the sin(phi) of its own centre and the leftover error is only the variation ACROSS
+    center handled that by staying where sin(phi) ~ 1; small windows handle it better, because
+    each gets the sin(phi) of its own center and the leftover error is only the variation ACROSS
     the window.
 
     That leftover goes as 2*h*tan(elevation) for a window of half-height h. It is exactly zero at
