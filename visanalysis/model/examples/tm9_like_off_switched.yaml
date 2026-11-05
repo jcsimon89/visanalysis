@@ -1,0 +1,63 @@
+# A hypothetical model, written by hand. Load with
+#     spec.load_model("path/to/this.yaml")   or copy it into the library.
+#
+# Baccus & Meister convention: the filters output 'contrast' (unit-variance
+# generator on the stimulus they describe) and the nonlinearities carry the
+# gain in dF/F. The two states differ only in nonlinearity gain here: the
+# shape of a cell that adapts its gain but not its kinetics.
+spec_version: 1
+name: tm9_like_off_switched
+kind: SwitchedLN
+output:
+  channel: calcium
+  signal: imaged
+  units: dF/F
+  indicator: null
+provenance:
+  source: hypothetical
+  created: '2026-11-05'
+  description: >
+    OFF cell with a biphasic 90 ms filter, instant gain change between contrast
+    states, same kinetics in both. Filter amplitudes are placeholders scaled by
+    bm_scale() before use; see predict_ln.py --bm_normalize.
+label: contrast_state
+states:
+- value: 1
+  name: high
+  filter:
+    kind: gamma_diff
+    amp1: -1.0
+    n1: 4.0
+    tau1: 0.025
+    amp2: -0.35
+    n2: 6.0
+    tau2: 0.08
+    delay: 0.0
+    duration: 1.0
+    output_units: contrast
+    normalization: BM2002
+  nonlinearity:
+    kind: linear
+    gain: 0.08
+    offset: 0.15
+    input_units: contrast
+- value: -1
+  name: low
+  filter:
+    kind: gamma_diff
+    amp1: -1.0
+    n1: 4.0
+    tau1: 0.025
+    amp2: -0.35
+    n2: 6.0
+    tau2: 0.08
+    delay: 0.0
+    duration: 1.0
+    output_units: contrast
+    normalization: BM2002
+  nonlinearity:
+    kind: linear
+    gain: 0.16
+    offset: 0.06
+    input_units: contrast
+default: null
