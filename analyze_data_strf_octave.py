@@ -54,10 +54,10 @@ HOW THIS DIFFERS FROM THE NOIZONE PIPELINE
   was correctly refused everywhere else by the reliability guard.
 
   The case it cannot fix, and which no flag changes: a NON-separable filter
-  inside one octave, centre and surround with different kinetics in the same
+  inside one octave, center and surround with different kinetics in the same
   layer. There the smear moves which lobe dominates the peak lag -- measured,
   peak 0.31 s -> 1.52 s and the spatial profile inverted to r = -0.60. Splitting
-  centre and surround across octaves is what keeps you out of that regime, but
+  center and surround across octaves is what keeps you out of that regime, but
   the layers are overcomplete, so it is not guaranteed.
 
 * The cell basis is overcomplete across octaves -- one 25 deg cell overlaps ~17
@@ -71,17 +71,18 @@ import argparse
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from visanalysis.util.strf_plot import apply_figure_style
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
 from visanalysis.util.octave_stim import (
     is_octave_ternary, resolve_octave_epoch_meta, load_octave_cells,
     octave_slices, cell_directions, cell_azel_deg, display_scale,
-    effective_dof_frames,
+    effective_dof_frames, coarse_parents,
 )
 from visanalysis.util.octave_strf import (
     compute_strf_cells_folds, peak_lag, independent_samples,
     deconvolve_octaves, zscore_by_octave, spherical_centroid,
-    direction_to_azel_deg, coarse_assignment, fit_joint_cells,
+    direction_to_azel_deg, fit_joint_cells,
 )
 from visanalysis.util import bleach, nullcal
 from visanalysis.util.frame_timing import reconstruct_displayed_frame_indices
@@ -89,6 +90,7 @@ from visanalysis.util.strf_plot import _tighten
 import h5py
 
 plt.ioff()
+apply_figure_style()
 
 
 if __name__ == '__main__':
@@ -98,6 +100,11 @@ if __name__ == '__main__':
     parser.add_argument('--show_figs', nargs='?', default='False')
     parser.add_argument('--save_figs', nargs='?', default='False')
     parser.add_argument('--tag', nargs='?', default='raw')
+    parser.add_argument('--experiment_file_name', nargs='?', default=None,
+                        help="hdf5 to read. Default: fly_<tag>.hdf5 when that "
+                             "file exists (a recording whose rois were selected "
+                             "from a search stimulus), else fly.hdf5 -- so --tag "
+                             "can be a plain label on flies that never had one.")
     parser.add_argument('--dff', nargs='?', default='pre')
     parser.add_argument('--null_shifts', nargs='?', type=int, default=4,
                         help='circular-shift null draws; 0 disables. Costs (n+1)x '
@@ -140,11 +147,31 @@ if __name__ == '__main__':
     filter_length_s = float(args.filter_length)
     monitor_hz_override = args.monitor_hz
 
-    experiment_file_name = 'fly.hdf5' if tag == 'raw' else 'fly_' + tag + '.hdf5'
+    # --tag is a LABEL for the output -- the hdf5 group and the figure folder --
+    # not a filename. It used to be both: 'raw' meant fly.hdf5 and anything else
+    # meant fly_<tag>.hdf5, the filtered copy select_final_rois.py writes after
+    # picking responsive rois from a search stimulus. That step is being retired,
+    # because responsive rois are now identified from the noise itself against a
+    # calibrated null, which needs no separate stimulus and does not require the
+    # receptive field to sit near the middle of the screen.
+    #
+    # Recordings that DO have a search stim still have their fly_<tag>.hdf5, and
+    # must keep working, so the tagged file is used WHEN IT EXISTS and fly.hdf5
+    # otherwise. That leaves --tag free to be a plain label like 'mi1_1d' or
+    # 'lag60' on a fly that never had one, which is also how two analyses can sit
+    # side by side in one file instead of overwriting each other.
+    if getattr(args, 'experiment_file_name', None):
+        experiment_file_name = args.experiment_file_name
+    else:
+        _tagged = 'fly.hdf5' if tag == 'raw' else 'fly_' + tag + '.hdf5'
+        experiment_file_name = (
+            _tagged if os.path.exists(os.path.join(experiment_file_directory,
+                                                   _tagged)) else 'fly.hdf5')
     experiment_file_path = os.path.join(experiment_file_directory, experiment_file_name)
     if not os.path.exists(experiment_file_path):
         print('No such file: ' + experiment_file_path)
         sys.exit(1)
+    print('reading ' + experiment_file_name)
 
     if rig == 'Bruker':
         from visanalysis.plugin import bruker
@@ -204,12 +231,13 @@ if __name__ == '__main__':
     for sn, info in octave_series_info.items():
         meta0 = info['epochs'][0][0]
         seeds = sorted({m[0]['seed'] for m in info['epochs']})
-        fibs = sorted({m[0]['fibonacci_seed'] for m in info['epochs']})
-        print('  {}: {} epochs  patches={} deg  taus={} s  cells={}  '
-              '{} distinct seed(s), fibonacci_seed={}'.format(
-                  sn, len(info['epochs']), tuple(meta0['patch_degrees']),
-                  tuple(meta0['hold_taus']), sum(meta0['n_cells']), len(seeds), fibs))
-        if len(fibs) > 1:
+        rots = sorted({m[0]['rotation_seed'] for m in info['epochs']})
+        print('  {}: {} epochs  nsides={}  patches={} deg  taus={} s  cells={}  '
+              '{} distinct seed(s), rotation_seed={}'.format(
+                  sn, len(info['epochs']), tuple(meta0['nsides']),
+                  tuple(round(d, 1) for d in meta0['patch_degrees']),
+                  tuple(meta0['hold_taus']), sum(meta0['n_cells']), len(seeds), rots))
+        if len(rots) > 1:
             print('    NOTE: the tessellation rotates within this series, so cells do '
                   'not mean the same thing across those epochs. They are grouped below.')
 
@@ -264,7 +292,7 @@ if __name__ == '__main__':
                 1.0 / sample_dt))
 
             # Group by geometry. Cells only mean the same thing across trials that
-            # share a tessellation, so fibonacci_seed keys the group; the noise seed
+            # share a tessellation, so rotation_seed keys the group; the noise seed
             # varies freely within it and is exactly what we want varying.
             trials_by_geom = {}
             geom_meta = {}
@@ -298,7 +326,7 @@ if __name__ == '__main__':
 
                 stim_cells = load_octave_cells(meta, n_frames, frame_indices=idx)
 
-                key = int(meta['fibonacci_seed'])
+                key = int(meta['rotation_seed'])
                 geom_meta[key] = meta
                 grp = trials_by_geom.setdefault(key, [])
                 for roi_ind in range(n_roi):
@@ -310,17 +338,17 @@ if __name__ == '__main__':
                         'stim_dt': raw_stim_dt,
                     })
 
-            for fib, trials in trials_by_geom.items():
-                meta = geom_meta[fib]
+            for rot, trials in trials_by_geom.items():
+                meta = geom_meta[rot]
                 n_cells = int(sum(meta['n_cells']))
                 octs = octave_slices(meta)
 
                 _t0 = time.perf_counter()
                 strf_full, folds, t_lag, n_valid = compute_strf_cells_folds(
                     trials, n_roi, n_cells, filter_length_s, pre_time)
-                print('    [timing] compute_strf_cells_folds ({} {} fib={}, {} '
+                print('    [timing] compute_strf_cells_folds ({} {} rot={}, {} '
                       'trial-roi entries) took {:.2f}s'.format(
-                          sn, ch, fib, len(trials), time.perf_counter() - _t0))
+                          sn, ch, rot, len(trials), time.perf_counter() - _t0))
 
                 lag_dt = float(t_lag[1] - t_lag[0]) if len(t_lag) > 1 else raw_stim_dt
 
@@ -351,7 +379,10 @@ if __name__ == '__main__':
                             _msg += '  split-half {:.3f} -> {:.3f}'.format(
                                 _i['split_half_raw'], _i['split_half_deconvolved'])
                         print(_msg)
-                        if _i['how'].startswith('rejected'):
+                        # lam, not the 'rejected' prefix: 'cv unusable (no signal)'
+                        # and 'none (returned un-deconvolved)' also leave the STA
+                        # untouched, and both leave lam None.
+                        if _i.get('lam') is None:
                             print('             -> kept the STA. It is still convolved '
                                   'with exp(-|t|/{:.2f}s), so read its peak lag as late.'
                                   .format(_tau))
@@ -371,7 +402,10 @@ if __name__ == '__main__':
                 # and its closed form assumed a single coarse layer, so it was
                 # never defined past two octaves anyway.
                 fine_sl = octs[-1][1]
-                joint_assign = [coarse_assignment(dirs[fine_sl], dirs[octs[j][1]])
+                # Exact under HEALPix: a fine pixel nests wholly inside one
+                # coarse pixel, so the parent is a bit shift rather than the
+                # nearest-center guess coarse_assignment had to make.
+                joint_assign = [coarse_parents(meta, len(octs) - 1, j)
                                 for j in range(len(octs) - 1)]
                 _t0 = time.perf_counter()
                 strf_unified, _jlag, joint_info = fit_joint_cells(
@@ -383,6 +417,8 @@ if __name__ == '__main__':
                 # be the right reference. Only the per-ROI p and the threshold
                 # are kept; no null arrays are stored.
                 null_p, null_thr = None, None
+                null_keep, null_signs, null_select = None, None, {}
+                null_mixed = False
                 if null_shifts > 0:
                     _sdt = float(trials[0]['stim_dt'])
 
@@ -412,6 +448,32 @@ if __name__ == '__main__':
                     _ok = np.isfinite(_z)
                     null_p[_ok] = nullcal.pvalues(_z[_ok], _cal['null'])[0]
                     null_thr = _cal['threshold']
+                    # Turn the null into a kept set, as the full-field pipeline
+                    # does. Computed on strf_unified, the same estimator the null
+                    # was calibrated against. Unlike the 1D twin this is NOT
+                    # restricted to visible cells: the null here runs through
+                    # fit_joint_cells on the fine layer, so restricting it means
+                    # changing that estimator's basis rather than masking columns.
+                    null_keep, null_signs, null_select = nullcal.select_rois(
+                        strf_unified, _cal)
+                    null_signs = np.asarray(null_signs, dtype=int)
+                    # Minority FRACTION, not 'both signs present' -- two dissenters
+                    # out of hundreds is a uniform population, and a warning that
+                    # fires on it is one an operator learns to ignore.
+                    _npos = int((null_signs > 0).sum())
+                    _nneg = int((null_signs < 0).sum())
+                    null_minor = (min(_npos, _nneg) / float(len(null_signs))
+                                  if len(null_signs) else 0.0)
+                    null_mixed = bool(null_minor > 0.1)
+                    print('    kept {} of {} rois by {} (q=0.05)'.format(
+                        len(null_keep), n_roi, null_select.get('method_used', '?')))
+                    print('        polarity: {} positive, {} negative '
+                          '({:.1%} minority)'.format(_npos, _nneg, null_minor))
+                    if null_mixed:
+                        print('        NOTE: genuinely MIXED in polarity; '
+                              'split them rather than averaging together.')
+                    if 'warning' in null_select:
+                        print('        {}'.format(null_select['warning']))
                     print('    [timing] null ({} shifts) took {:.2f}s; '
                           'threshold {:.2f}'.format(
                               null_shifts, time.perf_counter() - _t1, null_thr))
@@ -441,11 +503,15 @@ if __name__ == '__main__':
                 for name, sl, _d, _tau in octs:
                     c = np.full((n_roi, 2), np.nan)
                     nk = np.zeros(n_roi, dtype=int)
+                    # Adjacency scaled to THIS octave's cells: a 25 deg layer and
+                    # a 6 deg one do not share a notion of 'next to'.
+                    _nbr = 1.5 * float(_d)
+                    _sd_j = z_info[name].get('sd')
                     for r in range(n_roi):
                         w = strf_dec[r, sl, pk[r]]
                         if not np.any(w):
                             continue
-                        # The centroid of the DOMINANT LOBE, not of |w|. A centre
+                        # The centroid of the DOMINANT LOBE, not of |w|. A center
                         # surround filter has both signs at one lag, and |w| would
                         # average the two into a point between them that belongs to
                         # neither. Take the polarity of the strongest cell and keep
@@ -453,26 +519,35 @@ if __name__ == '__main__':
                         # means by "cells above a fraction of the roi's own peak".
                         sign = np.sign(w[np.argmax(np.abs(w))])
                         lobe = np.clip(w * sign, 0.0, None)
-                        d_hat, nk[r] = spherical_centroid(lobe, dirs[sl], frac=0.5)
+                        # Noise-relative and connected, using this ROI's own
+                        # noise in this octave: a peak-relative cut snaps the
+                        # centroid onto a cell center whenever the lobe is
+                        # narrow. See spherical_centroid.
+                        d_hat, nk[r] = spherical_centroid(
+                            lobe, dirs[sl],
+                            noise_sd=(None if _sd_j is None else _sd_j[r]),
+                            neighbour_deg=_nbr)
                         if np.all(np.isfinite(d_hat)):
                             c[r] = direction_to_azel_deg(d_hat)
                     centroids[name] = c
                     n_kept_cells[name] = nk
 
-                strf_results[sn, ch, fib] = {
+                strf_results[sn, ch, rot] = {
                     'strf_raw': strf_full, 'strf': strf_dec, 'strf_z': strf_z,
                     't_lag': t_lag, 'n_valid': n_valid, 'lam': lam_used,
                     'meta': meta, 'octaves': octs, 'cell_azel_deg': azel,
                     'peak_lag_ind': pk, 'centroids': centroids, 'dof': dof,
                     'z_info': z_info, 'n_kept_cells': n_kept_cells,
                     'strf_unified': strf_unified, 'joint_info': joint_info,
+                    'keep_rois': null_keep, 'kept_signs': null_signs,
+                    'null_select_info': null_select, 'mixed_polarity': null_mixed,
                     # octs[-1], not octs[1] -- the fine layer is the LAST one, and
                     # those coincide only at two octaves.
                     'fine_azel_deg': azel[octs[-1][1]],
                     'display_scale': display_scale(meta),
                 }
-                print('    -> {} {} fib={}: STRF {} (n_roi, n_cells, n_lags) from {} '
-                      'trial-roi entries'.format(sn, ch, fib, strf_dec.shape, len(trials)))
+                print('    -> {} {} rot={}: STRF {} (n_roi, n_cells, n_lags) from {} '
+                      'trial-roi entries'.format(sn, ch, rot, strf_dec.shape, len(trials)))
                 for name, sl_, d, tau in octs:
                     n_cell_j = sl_.stop - sl_.start
                     indep = float(np.median(dof[name]))
@@ -497,8 +572,8 @@ if __name__ == '__main__':
         g.attrs['dff'] = dff
         g.attrs['deconvolved'] = bool(args.deconvolve)
 
-        for (sn, ch, fib), res in strf_results.items():
-            sg = g.require_group('{}/{}/fib_{}'.format(sn, ch, fib))
+        for (sn, ch, rot), res in strf_results.items():
+            sg = g.require_group('{}/{}/rot_{}'.format(sn, ch, rot))
             for key in ('strf_raw', 'strf', 'strf_z'):
                 sg.create_dataset(key, data=res[key], compression='gzip')
             # One filter on the fine cells, every octave folded in. This is the
@@ -513,7 +588,15 @@ if __name__ == '__main__':
             sg.create_dataset('cell_azel_deg', data=res['cell_azel_deg'])
             sg.create_dataset('n_valid', data=res['n_valid'])
             sg.create_dataset('peak_lag_ind', data=res['peak_lag_ind'])
-            sg.attrs['fibonacci_seed'] = fib
+            if res['keep_rois'] is not None:
+                sg.create_dataset('kept_rois',
+                                  data=np.asarray(res['keep_rois'], dtype=int))
+                sg.create_dataset('kept_signs',
+                                  data=np.asarray(res['kept_signs'], dtype=int))
+                sg.attrs['kept_mixed_polarity'] = res['mixed_polarity']
+                for _k, _v in res['null_select_info'].items():
+                    sg.attrs['null_select_' + _k] = _v
+            sg.attrs['rotation_seed'] = rot
             sg.attrs['display_scale'] = res['display_scale']
             # Cell columns are only interpretable alongside the octave boundaries, so
             # the slices are recorded rather than left to be recomputed downstream.
@@ -535,7 +618,7 @@ if __name__ == '__main__':
                 if res['lam'] is not None:
                     _i = res['lam'][name]
                     og.attrs['deconv_how'] = _i['how']
-                    og.attrs['deconv_applied'] = not _i['how'].startswith('rejected')
+                    og.attrs['deconv_applied'] = _i.get('lam') is not None
                     if _i.get('lam') is not None:
                         og.attrs['deconv_lam'] = float(_i['lam'])
                     if 'split_half_raw' in _i:
@@ -552,7 +635,7 @@ if __name__ == '__main__':
         figs_dir = os.path.join(experiment_file_directory, tag + '_roi_figs')
         os.makedirs(figs_dir, exist_ok=True)
 
-        for (sn, ch, fib), res in strf_results.items():
+        for (sn, ch, rot), res in strf_results.items():
             strf, t_lag, octs = res['strf'], res['t_lag'], res['octaves']
             azel, pk = res['cell_azel_deg'], res['peak_lag_ind']
             n_roi = strf.shape[0]
@@ -622,12 +705,12 @@ if __name__ == '__main__':
                 ax.set_ylabel('filter (cell units)')
                 ax.set_title('joint fit: 5 strongest cells')
 
-                title = '{} {} fib={}  roi {}'.format(sn, ch, fib, r)
+                title = '{} {} rot={}  roi {}'.format(sn, ch, rot, r)
                 if res['lam'] is None:
                     title += '  [STA, not deconvolved: peak lag reads late]'
                 else:
                     _raw = [n for n, _s, _dd, _t in octs
-                            if res['lam'][n]['how'].startswith('rejected')]
+                            if res['lam'][n].get('lam') is None]
                     if _raw:
                         title += '  [{}: STA kept, still smeared]'.format(', '.join(_raw))
                 fig.suptitle(title)
@@ -635,7 +718,7 @@ if __name__ == '__main__':
                 if save_figs:
                     fig.savefig(os.path.join(
                         figs_dir,
-                        'strf_octave_{}_{}_fib{}_roi{:03d}.pdf'.format(sn, ch, fib, r)))
+                        'strf_octave_{}_{}_rot{}_roi{:03d}.pdf'.format(sn, ch, rot, r)))
                 if not show_figs:
                     plt.close(fig)
 
