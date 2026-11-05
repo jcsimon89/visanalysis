@@ -26,6 +26,11 @@ import numpy as np
 
 from visanalysis.util import plot_tools, h5io
 
+# Regularization constant k for the Fano image, var / (mean + k), in image intensity
+# units. Voxels with mean well below k are pulled toward zero. Where mean >> k the image
+# is the true Fano factor; as k grows past typical means it converges on the variance image.
+FANO_REGULARIZER = 300.0
+
 
 class DataGUI(QWidget):
 
@@ -208,15 +213,13 @@ class DataGUI(QWidget):
         self.overlay_cbar = self.roi_fig.colorbar(overlay_im_placeholder, ax=self.roi_ax, fraction=0.046, pad=0.04)
         self.overlay_cbar.ax.set_visible(False)
 
-        self.roi_canvas.mpl_connect('scroll_event', self.onScrollZoom)
-
-        # # # # Fano factor canvas (variance / mean over time) # # # # (1, 2)
+        # # # # Regularized Fano factor canvas (variance / (mean + k) over time) # # # # (1, 2)
         self.fano_fig = plt.figure()
         self.fano_ax = self.fano_fig.add_subplot(111)
         self.fano_canvas = FigureCanvas(self.fano_fig)
         self.fano_ax.set_aspect('equal')
         self.fano_ax.set_axis_off()
-        self.fano_ax.set_title('Fano factor', fontsize=8)
+        self.fano_ax.set_title('Fano factor, var / (mean + {:g})'.format(FANO_REGULARIZER), fontsize=8)
         self.fano_im = self.fano_ax.imshow(self.blank_image, cmap=self.fano_cmap)
         self.fano_cbar = self.fano_fig.colorbar(self.fano_im, ax=self.fano_ax, fraction=0.046, pad=0.04)
         self.plot_grid.addWidget(self.fano_canvas, 2, 1)
@@ -406,20 +409,6 @@ class DataGUI(QWidget):
                 print('Warning ROI type not recognized. Choose circle or freehand')
 
         self.refreshFanoWidget()
-
-    def onScrollZoom(self, event):
-        """Zoom the roi image in/out around the cursor. Doesn't touch data coordinates,
-        so it can't affect where a lasso/ellipse ROI actually lands."""
-        if event.inaxes != self.roi_ax or self.roi_image is None:
-            return
-        if event.xdata is None or event.ydata is None:
-            return
-        zoom_factor = 0.8 if event.button == 'up' else 1.25
-        xlim = self.roi_ax.get_xlim()
-        ylim = self.roi_ax.get_ylim()
-        self.roi_ax.set_xlim([event.xdata + (x - event.xdata) * zoom_factor for x in xlim])
-        self.roi_ax.set_ylim([event.ydata + (y - event.ydata) * zoom_factor for y in ylim])
-        self.roi_canvas.draw_idle()
 
     def refreshFanoWidget(self):
         if self.fano_image is not None:
@@ -651,14 +640,15 @@ class DataGUI(QWidget):
         self.redrawRoiTraces()
 
     def computeFanoImage(self):
-        """Fano factor (variance / mean) at each pixel, computed over the time axis of the raw series."""
+        """Regularized Fano factor, variance / (mean + FANO_REGULARIZER), at each pixel,
+        computed over the time axis of the raw series."""
         current_series = getattr(self.plugin, 'current_series', None)
         if current_series is None:
             return None
         mean_image = np.mean(current_series, axis=3)
         var_image = np.var(current_series, axis=3)
         with np.errstate(divide='ignore', invalid='ignore'):
-            return np.where(mean_image > 0, var_image / mean_image, np.nan)
+            return np.where(mean_image > 0, var_image / (mean_image + FANO_REGULARIZER), np.nan)
 
 
 if __name__ == '__main__':
