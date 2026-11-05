@@ -21,7 +21,7 @@ an artefact rather than biology. The tell is a centroid distribution pressed up
 against one edge of the field.
 
 Separately, the plotted axis being asymmetric is EXPECTED whenever centroids are
-off-centre: an ROI at centroid c covers relative positions [pos0 - c, pos1 - c],
+off-center: an ROI at centroid c covers relative positions [pos0 - c, pos1 - c],
 so a population sitting anterior has more screen behind it than in front. That
 alone is not a problem -- it just means the posterior flank is characterised
 further out than the anterior one.
@@ -67,7 +67,7 @@ def main():
                         print(f'{sn} {ch} {rtz_key} {nt_key}   '
                               f'{int(inc.sum())}/{len(inc)} ROIs included')
                         print(f'   field covered      {lo:+7.1f} .. {hi:+6.1f} deg '
-                              f'(centre {0.5*(lo+hi):+.1f})')
+                              f'(center {0.5*(lo+hi):+.1f})')
                         print(f'   RF centroids       {c.min():+7.1f} .. {c.max():+6.1f}   '
                               f'mean {c.mean():+.1f}  median {np.median(c):+.1f}')
 
