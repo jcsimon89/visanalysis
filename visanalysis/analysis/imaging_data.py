@@ -307,7 +307,9 @@ class ImagingDataObject:
 
         returns: frame_offsets (sec), temporal sample offset for each z slice component of a volume
         """
-        with h5py.File(self.file_path, "r+") as experiment_file:
+        # "r", not "r+": this only reads, and write mode fails on a read-only
+        # file -- which the old caller then swallowed as "not volumetric".
+        with h5py.File(self.file_path, "r") as experiment_file:
             find_partial = functools.partial(h5io.find_series, sn=self.series_number)
             series_group = experiment_file.visititems(find_partial)
             acquisition_group = series_group["acquisition"]
@@ -917,22 +919,22 @@ class ImagingDataObject:
             roi_data["time_vector"] = time_vector
             roi_data["time_vector_by_epoch"] = time_vector_by_epoch
 
-        # Compute Z-plane offsets for each ROI
+        # Per-ROI sampling-time offset within the volume: an ROI in slice z is
+        # sampled frame_offsets[z] after time_points. See roi_z_offsets().
         try:
             frame_offsets = self.getVolumeFrameOffsets()
-            if len(frame_offsets) > 1 and "roi_mask" in roi_data:
-                roi_z_offsets = np.zeros(len(roi_data["roi_response"]))
-                for roi_num in range(len(roi_data["roi_response"])):
-                    mask = roi_data["roi_mask"][roi_num]
-                    if np.any(mask):
-                        # Find the first Z-slice where the mask exists (axis 0=Y, 1=X, 2=Z)
-                        z_idx = np.where(np.any(mask, axis=(0, 1)))[0][0]
-                        z_idx = min(z_idx, len(frame_offsets) - 1)
-                        roi_z_offsets[roi_num] = frame_offsets[z_idx]
-                roi_data["roi_z_offsets"] = roi_z_offsets
-        except Exception:
-            # If not volumetric or if mask parsing fails, safely ignore
-            pass
+        except (KeyError, IndexError, ValueError):
+            frame_offsets = np.zeros(1)          # not volumetric: nothing to do
+        if len(frame_offsets) > 1 and "roi_mask" in roi_data:
+            try:
+                roi_data["roi_z_offsets"] = roi_z_offsets(
+                    roi_data["roi_mask"], len(roi_data["roi_response"]),
+                    frame_offsets)
+            except ValueError as e:
+                # Loud, not silent: a missing offset times every ROI at slice 0,
+                # which shifts filters and trial averages by up to a volume.
+                warnings.warn('roi_z_offsets not computed ({}); every ROI will '
+                              'be timed as if it were in slice 0'.format(e))
 
         return roi_data
     
@@ -1372,3 +1374,56 @@ class ImagingDataObject:
             plot_tools.addImageScaleBar(
                 ax, new_image, scale_bar_length, microns_per_pixel, "lr"
             )
+
+
+def roi_z_offsets(roi_mask, n_roi, frame_offsets):
+    """Effective sampling-time offset of each ROI within a volume (sec).
+
+    A volume's slices are acquired one after another, so a voxel in slice z is
+    sampled frame_offsets[z] after the volume's time point. An ROI's response
+    is the mean over its voxels, which may span slices, so its effective sample
+    time is the VOXEL-WEIGHTED mean of its slices' offsets.
+
+    roi_mask comes in two layouts:
+      * a single label volume (x, y, z) -- what saveRegionResponsesFromMask
+        stores for aligned ROI sets -- where roi_response[i] belongs to the i-th
+        sorted label (label 0 is background unless the set was saved with
+        include_zero, which shows up as one more label than there are ROIs);
+      * one mask per ROI, each (x, y, z).
+    Indexing the first layout as if it were the second reads a single row of
+    the volume as an 'ROI' -- which is what this used to do, silently, giving
+    every ROI slice 0's timing.
+
+    Raises ValueError when the mask cannot be matched to n_roi ROIs.
+    """
+    frame_offsets = np.asarray(frame_offsets, dtype=float)
+    n_z = len(frame_offsets)
+
+    def weighted(counts):
+        tot = counts.sum()
+        return float(np.dot(counts, frame_offsets) / tot) if tot else 0.0
+
+    if not isinstance(roi_mask, (list, tuple)):
+        m = np.asarray(roi_mask)
+        if m.ndim == 3:
+            if m.shape[-1] != n_z:
+                raise ValueError('label volume has {} slices, the scan has {}'
+                                 .format(m.shape[-1], n_z))
+            labels = np.unique(m)
+            if np.count_nonzero(labels) == n_roi:
+                labels = labels[labels != 0]
+            elif len(labels) != n_roi:
+                raise ValueError('label volume has {} labels for {} ROIs'
+                                 .format(np.count_nonzero(labels), n_roi))
+            return np.array([weighted(np.sum(m == lab, axis=(0, 1)))
+                             for lab in labels])
+
+    masks = list(roi_mask)
+    if len(masks) != n_roi:
+        raise ValueError('{} masks for {} ROIs'.format(len(masks), n_roi))
+    out = np.zeros(n_roi)
+    for i, mk in enumerate(masks):
+        mk = np.asarray(mk)
+        if mk.ndim == 3 and mk.shape[-1] == n_z:
+            out[i] = weighted(np.sum(mk != 0, axis=(0, 1)))
+    return out
