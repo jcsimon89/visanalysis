@@ -77,7 +77,7 @@ from visanalysis.analysis import imaging_data
 from visanalysis.util.octave_stim import (
     is_octave_ternary, resolve_octave_epoch_meta, load_octave_cells,
     octave_slices, cell_directions, cell_azel_deg, display_scale,
-    effective_dof_frames, coarse_parents,
+    effective_dof_frames, coarse_parents, visible_cells,
 )
 from visanalysis.util.octave_strf import (
     compute_strf_cells_folds, peak_lag, independent_samples,
@@ -106,7 +106,7 @@ if __name__ == '__main__':
                              "from a search stimulus), else fly.hdf5 -- so --tag "
                              "can be a plain label on flies that never had one.")
     parser.add_argument('--dff', nargs='?', default='pre')
-    parser.add_argument('--null_shifts', nargs='?', type=int, default=4,
+    parser.add_argument('--null_shifts', nargs='?', type=int, default=10,
                         help='circular-shift null draws; 0 disables. Costs (n+1)x '
                              'the joint fit. See util.nullcal.')
     parser.add_argument('--bleach', nargs='?', default='auto',
@@ -296,6 +296,7 @@ if __name__ == '__main__':
             # varies freely within it and is exactly what we want varying.
             trials_by_geom = {}
             geom_meta = {}
+            geom_visible = {}
             for trial_ind, (meta, _sampling) in enumerate(info['epochs']):
                 if trial_ind >= epoch_response.shape[1]:
                     break
@@ -328,6 +329,11 @@ if __name__ == '__main__':
 
                 key = int(meta['rotation_seed'])
                 geom_meta[key] = meta
+                # A union: trials that share a tessellation may still place the
+                # patch differently, and a cell any of them showed was displayed.
+                _vis = visible_cells(meta, _sampling)
+                geom_visible[key] = (_vis if key not in geom_visible
+                                     else geom_visible[key] | _vis)
                 grp = trials_by_geom.setdefault(key, [])
                 for roi_ind in range(n_roi):
                     grp.append({
@@ -402,6 +408,7 @@ if __name__ == '__main__':
                 # and its closed form assumed a single coarse layer, so it was
                 # never defined past two octaves anyway.
                 fine_sl = octs[-1][1]
+                fine_vis = geom_visible[rot][fine_sl]
                 # Exact under HEALPix: a fine pixel nests wholly inside one
                 # coarse pixel, so the parent is a bit shift rather than the
                 # nearest-center guess coarse_assignment had to make.
@@ -437,25 +444,28 @@ if __name__ == '__main__':
                              for t in _tr],
                             n_roi, list(meta['n_cells']), octs, dirs,
                             filter_length_s, pre_time, ridge=args.joint_ridge,
-                            assignment=joint_assign)[0]
+                            assignment=joint_assign)[0][:, fine_vis, :]
                     _dur = trials[0]['stim_cells'].shape[0] * _sdt
                     _t1 = time.perf_counter()
                     _cal = nullcal.calibrate(
                         _shifted,
                         nullcal.shifts_for(_dur, filter_length_s, null_shifts))
-                    _z = nullcal.peak_z(strf_unified)
+                    _vis_unified = strf_unified[:, fine_vis, :]
+                    _z = nullcal.peak_z(_vis_unified)
                     null_p = np.full(n_roi, np.nan)
                     _ok = np.isfinite(_z)
                     null_p[_ok] = nullcal.pvalues(_z[_ok], _cal['null'])[0]
                     null_thr = _cal['threshold']
                     # Turn the null into a kept set, as the full-field pipeline
                     # does. Computed on strf_unified, the same estimator the null
-                    # was calibrated against. Unlike the 1D twin this is NOT
-                    # restricted to visible cells: the null here runs through
-                    # fit_joint_cells on the fine layer, so restricting it means
-                    # changing that estimator's basis rather than masking columns.
+                    # was calibrated against, and like the 1D twin restricted to
+                    # the fine cells the patch displayed, on BOTH sides. The fit
+                    # still uses every cell; only the peak search is masked, so
+                    # the ROI statistic and the null remain the same max over
+                    # the same columns. Never-displayed cells are pure noise and
+                    # only raise the cutoff a real filter has to clear.
                     null_keep, null_signs, null_select = nullcal.select_rois(
-                        strf_unified, _cal)
+                        _vis_unified, _cal)
                     null_signs = np.asarray(null_signs, dtype=int)
                     # Minority FRACTION, not 'both signs present' -- two dissenters
                     # out of hundreds is a uniform population, and a warning that
@@ -540,6 +550,8 @@ if __name__ == '__main__':
                     'z_info': z_info, 'n_kept_cells': n_kept_cells,
                     'strf_unified': strf_unified, 'joint_info': joint_info,
                     'keep_rois': null_keep, 'kept_signs': null_signs,
+                    'null_p': null_p, 'null_threshold': null_thr,
+                    'fine_visible': fine_vis,
                     'null_select_info': null_select, 'mixed_polarity': null_mixed,
                     # octs[-1], not octs[1] -- the fine layer is the LAST one, and
                     # those coincide only at two octaves.
@@ -588,12 +600,17 @@ if __name__ == '__main__':
             sg.create_dataset('cell_azel_deg', data=res['cell_azel_deg'])
             sg.create_dataset('n_valid', data=res['n_valid'])
             sg.create_dataset('peak_lag_ind', data=res['peak_lag_ind'])
+            sg.create_dataset('unified_visible', data=res['fine_visible'])
+            if res['null_p'] is not None:
+                sg.create_dataset('null_p', data=res['null_p'])
+                sg.attrs['null_threshold'] = res['null_threshold']
             if res['keep_rois'] is not None:
                 sg.create_dataset('kept_rois',
                                   data=np.asarray(res['keep_rois'], dtype=int))
                 sg.create_dataset('kept_signs',
                                   data=np.asarray(res['kept_signs'], dtype=int))
                 sg.attrs['kept_mixed_polarity'] = res['mixed_polarity']
+                sg.attrs['selection_basis'] = 'visible cells only'
                 for _k, _v in res['null_select_info'].items():
                     sg.attrs['null_select_' + _k] = _v
             sg.attrs['rotation_seed'] = rot
