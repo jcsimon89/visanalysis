@@ -30,15 +30,18 @@ __all__ = ["Nonlinearity", "TabulatedNL", "LinearNL", "ReluNL", "PowerNL", "Sigm
 class Nonlinearity(object):
     kind = None
 
-    def __init__(self, input_units="contrast", offset=0.0, name=None):
+    def __init__(self, input_units="contrast", offset=0.0, name=None, range=None):
         self.input_units = str(input_units)
         self.offset = float(offset)
         self.name = name
+        # a parametric nonlinearity fitted to a measured one keeps the measured range here, so a
+        # prediction still reports how much of it ran beyond what was measured
+        self._range = None if range is None else (float(range[0]), float(range[1]))
 
     @property
     def range(self):
         """(lo, hi) of generator the nonlinearity is trusted on, or None."""
-        return None
+        return self._range
 
     def _f(self, g):
         raise NotImplementedError
@@ -68,6 +71,8 @@ class Nonlinearity(object):
         d = dict(kind=self.kind, input_units=self.input_units, offset=self.offset)
         if self.name:
             d["name"] = self.name
+        if self._range is not None and self.kind != "tabulated":
+            d["range"] = list(self._range)
         d.update(self._spec_body())
         return d
 
@@ -96,6 +101,10 @@ class TabulatedNL(Nonlinearity):
     @property
     def range(self):
         return float(self.x[0]), float(self.x[-1])
+
+    def total(self):
+        """(x, y + offset, y_se): the nonlinearity in absolute response units."""
+        return self.x, self.y + self.offset, (np.full_like(self.x, np.nan) if self.y_se is None else self.y_se)
 
     def _f(self, g):
         out = np.interp(g, self.x, self.y)

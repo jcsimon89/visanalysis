@@ -19,11 +19,11 @@ What a spec contains (spec_version 1)
                  signal says whether the model's output is the measured
                  fluorescence ('imaged', nothing more to apply) or the cell's
                  own signal ('neural', an indicator kernel may be applied).
-    provenance:  {source: 'pipeline' | 'group' | 'hypothetical', created,
-                  description, ...}  free beyond those three; a pipeline
-                 export records fly, series, channel, gate, settings and the
-                 stimulus it was fitted to, a group export its members and
-                 their hashes.
+    provenance:  {source: 'pipeline' | 'group' | 'toy' | 'hypothetical',
+                  created, description, ...}  free beyond those three; a
+                 pipeline export records fly, series, channel, gate, settings
+                 and the stimulus it was fitted to, a group export its members
+                 and their hashes, a toy the model it idealised and the fits.
     LN:          filter: {...}, nonlinearity: {...}     (see filters.py,
                  nonlinearities.py for the kinds)
     SwitchedLN:  label: <label name>,

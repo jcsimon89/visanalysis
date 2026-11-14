@@ -75,7 +75,7 @@ def summary_figure(model, stim, resp, sampled=None, sta=None, recovered=None, ti
         a.plot(lag, dens, color=colors[v], lw=1.5, label="{} (model)".format(ln.name or v))
         if recovered and v in recovered:
             lag_r, dens_r = recovered[v]["filter"].tabulate(0.01)
-            a.plot(lag_r, dens_r, "--", color=colors[v], lw=1, label="{} recovered, r {:.2f}".format(
+            a.plot(lag_r, dens_r, "--", color=colors[v], lw=1, label="{} re-fitted from the prediction, r {:.2f}".format(
                 ln.name or v, recovered[v]["r"]))
     a.axhline(0, color="0.7", lw=0.5)
     a.set_xlabel("lag (s)")
@@ -129,8 +129,8 @@ def summary_figure(model, stim, resp, sampled=None, sta=None, recovered=None, ti
     if recovered:
         lines.append("")
         for v, d in recovered.items():
-            lines.append("recovered {}: r {:.3f}, B&M scale {:.3g}, {} rows, peak {:.0f} ms".format(
-                v, d["r"], d["scale"], d["n_rows"], d["filter"].peak()[0] * 1e3))
+            lines.append("re-fit from prediction {}: r {:.3f} (self-consistency, not data), B&M scale {:.3g}, "
+                         "{} rows, peak {:.0f} ms".format(v, d["r"], d["scale"], d["n_rows"], d["filter"].peak()[0] * 1e3))
     for n in resp.notes:
         lines.append(n)
     a.text(0.0, 1.0, "\n".join(_wrap(l, 70) for l in lines), va="top", ha="left", fontsize=7.5, family="monospace",

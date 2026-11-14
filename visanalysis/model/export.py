@@ -98,6 +98,80 @@ def contrast_switch_model(ctx, res, arrs, channel, fly_dir, series_name, library
     return s
 
 
+def contrast_blocks_model_name(fly_dir, series_name, channel):
+    geno, fly, sn = _fly_series(fly_dir, series_name)
+    return "contrast_blocks/{}_{}_{}_{}".format(geno, fly, sn, channel)
+
+
+def contrast_blocks_model(h5_path, fly_dir, series_name, channel="ch1", tag="final", library=None,
+                          overwrite=True, indicator=None, save=True):
+    """SwitchedLN on 'contrast_state' from a contrast-blocks result file (analyze_data_trf_contrast_blocks).
+
+    The file holds, per kept ROI, each condition's Baccus & Meister filter (ln_filters, per tap of
+    lag_dt) and binned nonlinearity (nl_x, nl_y, response NOT demeaned, so the level is in y).
+    The model is the ROI average of both: the mean normalized filter (whose generator variance is
+    then slightly below the stimulus's when ROI filters differ in shape; recorded, not corrected)
+    and the mean nonlinearity, with the SEM over ROIs as y_se. Condition 0 is the low contrast
+    (value -1), condition 1 the high (value +1)."""
+    import h5py
+    geno, fly, sn = _fly_series(fly_dir, series_name)
+    name = contrast_blocks_model_name(fly_dir, series_name, channel)
+    with h5py.File(h5_path, "r") as f:
+        top = "TRF_CONTRAST_BLOCKS_" + tag
+        g = f["{}/{}/{}".format(top, sn, channel)]
+        A = dict(g.attrs)
+        R = {k: g[k][...] for k in ("ln_filters", "nl_x", "nl_y", "lags", "cv_r", "ln_gain", "ln_shared_gain",
+                                    "intercepts", "stim_sd", "rms_contrast", "kept_rois", "peak_lag_s",
+                                    "shared_gain_ratio", "gain_ratio")}
+        lag_dt = float(f[top].attrs["lag_dt"])
+        flen = float(f[top].attrs["filter_length_s"])
+    n_roi = int(R["ln_filters"].shape[1])
+    states = []
+    for q, v, nm in ((0, -1, "low"), (1, 1, "high")):
+        h = np.nanmean(R["ln_filters"][q], axis=0)                 # (n_lag,), per tap of lag_dt
+        x = np.nanmean(R["nl_x"][q], axis=1)
+        y = np.nanmean(R["nl_y"][q], axis=1)
+        n_ok = np.sum(np.isfinite(R["nl_y"][q]), axis=1)
+        se = np.nanstd(R["nl_y"][q], axis=1) / np.sqrt(np.maximum(n_ok, 1))
+        states.append(dict(
+            value=v, name=nm,
+            filter=dict(kind="tabulated", lag_edges=np.arange(h.size + 1) * lag_dt, density=h / lag_dt,
+                        output_units="contrast", normalization="BM2002", name=nm),
+            nonlinearity=dict(kind="tabulated", x=x, y=y, y_se=se, input_units="contrast", offset=0.0,
+                              extrapolation="linear", name=nm)))
+    cond = str(A.get("condition_keys", ""))
+    desc = ("Steady-state LN per contrast block, {} {} {} {}: ROI-averaged Baccus & Meister filter and binned "
+            "nonlinearity (response level included in y) over the {} ROIs the pipeline kept. Measured with "
+            "ContrastBlockUniformNoise: uniform noise at 30 Hz, 5 s blocks, conditions {}").format(
+                geno, fly, sn, channel, n_roi, cond)
+    s = mspec.new_spec(
+        name=name.rsplit("/", 1)[-1], kind="SwitchedLN", source="pipeline", description=desc, channel=channel,
+        signal="imaged", units="dF/F", indicator=indicator,
+        pipeline="analyze_data_trf_contrast_blocks", fly=str(fly_dir), genotype=geno, fly_id=fly, series=sn,
+        result_file=str(h5_path), tag=tag,
+        fit=dict(n_roi=n_roi, kept_rois=[int(r) for r in R["kept_rois"]], ridge=_plain(A.get("ridge")),
+                 filter_length=flen, lag_dt=lag_dt, steady_start=_plain(A.get("steady_start_s")),
+                 has_filter=_plain(A.get("has_filter")),
+                 cv_r=dict(low=float(np.nanmean(R["cv_r"][0])), high=float(np.nanmean(R["cv_r"][1]))),
+                 gain=dict(low=float(np.nanmean(R["ln_gain"][0])), high=float(np.nanmean(R["ln_gain"][1])),
+                           ratio=float(np.nanmean(R["ln_gain"][0]) / np.nanmean(R["ln_gain"][1]))),
+                 shared_range=dict(low=float(np.nanmean(R["ln_shared_gain"][0])),
+                                   high=float(np.nanmean(R["ln_shared_gain"][1])),
+                                   ratio=float(np.nanmedian(R["shared_gain_ratio"]))),
+                 levels=dict(low=float(np.nanmean(R["intercepts"][0])), high=float(np.nanmean(R["intercepts"][1]))),
+                 peak_lag=dict(low=float(np.nanmedian(R["peak_lag_s"][0])), high=float(np.nanmedian(R["peak_lag_s"][1]))),
+                 stimulus_sd=[float(x) for x in R["stim_sd"]]),
+        fit_stimulus=dict(protocol="ContrastBlockUniformNoise", conditions=cond, block_s=5.0, update_hz=30.0,
+                          rms_contrasts=[float(x) for x in R["rms_contrast"]],
+                          contrast_ratio=_plain(A.get("contrast_ratio"))))
+    s["label"] = "contrast_state"
+    s["states"] = states
+    s["default"] = None
+    if save:
+        return mspec.save_model(s, name, library=library, overwrite=overwrite)
+    return s
+
+
 def _sub(d, keys):
     if not isinstance(d, dict):
         return None

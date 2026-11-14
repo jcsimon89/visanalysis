@@ -24,14 +24,18 @@ RESPONSES. ROI traces come from bleach.roi_responses (multiplicative bleach
 correction within each epoch), and dF/F is taken against each ROI's own median
 in that epoch, as in fullfield_temporal.
 
-ONE FILTER FOR THE POPULATION, NOT ONE PER ROI. Per-ROI low-contrast filters do
-not exceed their null on Tm9 (0 of 221 on JS256_x_JS261/fly_011), so a per-ROI
-LN model is mostly a description of filter noise. The gated ROIs are averaged
-within each z plane and one filter is fitted across the planes, each plane at
-its own sample times; that also fills in the volume period, so the lag axis can
-be finer than the volume (lag_dt). Each tap j is the displayed contrast
-averaged over [t - (j + 1) lag_dt, t - j lag_dt], with t the middle of the
-plane's scan; its lag is (j + 0.5) lag_dt.
+EVERY ROI ON ITS OWN, THEN COMBINED. Each gated ROI gets its own filter per
+contrast, nonlinearity, gains, non-adapting reference, gain dynamics and
+stretch; nothing is averaged across ROIs before fitting. Population numbers are
+medians across ROIs with 95% CIs from resampling ROIs, and every per-ROI value
+is saved alongside. Per-ROI low-contrast filters are noisy (on Tm9 most do not
+beat their null), which is exactly why each ROI's ratio is read against its own
+non-adapting reference, which carries that ROI's filter noise. ROIs of one z
+plane share a design, since they share their sample times; planes are sampled
+at different times, which fills in the volume period, so the lag axis can be
+finer than the volume (lag_dt). Each tap j is the displayed contrast averaged
+over [t - (j + 1) lag_dt, t - j lag_dt], with t the middle of the plane's scan;
+its lag is (j + 0.5) lag_dt.
 
 LN CONVENTION: BACCUS & MEISTER (2002), as for contrast_blocks. Each contrast
 state gets its OWN filter, scaled so the filtered stimulus has the variance of
@@ -306,43 +310,109 @@ def build_context(ID, roi_sets, correct_bleach="auto"):
                 dwell_s=stims[0]["dwell_s"], n_dwell=int(round(dur[0] / stims[0]["dwell_s"])))
 
 
-# ── design: pooled ROIs, one row per plane per imaging sample ──────────────
+# ── design: one row per imaging sample of a z plane; one response column per ROI ───────
 
-def pooled_rows(ctx, ch, keep, n_lag, lag_dt, first_dwell=2, roll_s=0.0, demean=True):
-    """Design and labels with the kept ROIs averaged within each z plane."""
+def _nanmean0(x):
+    """Column means ignoring NaN, 0 where a column is all NaN (no warning)."""
+    k = np.sum(np.isfinite(x), axis=0)
+    return np.nansum(x, axis=0) / np.maximum(k, 1)
+
+
+def plane_rows(ctx, ch, rois, n_lag, lag_dt, first_dwell=2, roll_s=0.0, pos_range=(-np.inf, np.inf)):
+    """Design for the ROIs of one z plane, which share their sampling times.
+
+    A: (rows, n_lag) stimulus taps at each imaging sample. Y: (rows, n_roi) dF/F, NaN where an
+    ROI's epoch was dropped. Nothing is averaged across ROIs: every ROI is analysed on its own
+    against this A. Each ROI's response is demeaned per trial and state, because drift between
+    trials and the contrast step are not stimulus-locked and the gains do not use them (Y_raw
+    keeps the undemeaned values)."""
     R = ctx["resp"][ch]
-    keep = np.asarray(keep, int)
-    out = {k: [] for k in ("A", "y", "state", "dwell", "since", "pos", "trial", "plane")}
-    for p in np.unique(R["plane"][keep]):
-        rois = keep[R["plane"][keep] == p]
-        off = float(np.mean(R["off"][rois])) + R["scan"] / 2.0
-        for e in range(ctx["n_ep"]):
-            st = ctx["stims"][e] if not roll_s else rolled(ctx["stims"][e], roll_s)
-            t = R["tvecs"][e] - ctx["pre"][e] + off
-            s, d, sn, ps = labels(st, t)
-            with np.errstate(invalid="ignore"):
-                y = np.nanmean(R["resp"][e][rois], axis=0)
-            m = (d >= first_dwell) & np.isfinite(y) & (ps <= ctx["stim_dur"][e])
-            if not m.any():
-                continue
-            out["A"].append(taps(st, t[m], n_lag, lag_dt))
-            out["y"].append(y[m])
-            for k, v in (("state", s), ("dwell", d), ("since", sn), ("pos", ps)):
-                out[k].append(v[m])
-            out["trial"].append(np.full(m.sum(), e))
-            out["plane"].append(np.full(m.sum(), p))
+    rois = np.asarray(rois, int)
+    off = float(np.mean(R["off"][rois])) + R["scan"] / 2.0
+    out = {k: [] for k in ("A", "Y", "state", "dwell", "since", "pos", "trial")}
+    for e in range(ctx["n_ep"]):
+        st = ctx["stims"][e] if not roll_s else rolled(ctx["stims"][e], roll_s)
+        t = R["tvecs"][e] - ctx["pre"][e] + off
+        s, d, sn, ps = labels(st, t)
+        m = (d >= first_dwell) & (ps <= ctx["stim_dur"][e]) & (ps >= pos_range[0]) & (ps < pos_range[1])
+        if not m.any():
+            continue
+        out["A"].append(taps(st, t[m], n_lag, lag_dt))
+        out["Y"].append(R["resp"][e][rois].T[m])
+        for k, v in (("state", s), ("dwell", d), ("since", sn), ("pos", ps)):
+            out[k].append(v[m])
+        out["trial"].append(np.full(m.sum(), e))
     d = {k: np.concatenate(v) for k, v in out.items()}
-    d["y_raw"] = d["y"].copy()
-    if demean:
-        # each plane and trial at its own level in each state: drift between trials and the
-        # calcium step itself are not stimulus-locked, and the gains do not use them
-        key = (d["plane"] * 1000 + d["trial"]) * 3 + (d["state"] + 1)
-        u, inv = np.unique(key, return_inverse=True)
-        d["y"] = d["y"] - (np.bincount(inv, d["y"]) / np.bincount(inv))[inv]
+    d["Y_raw"] = d["Y"].copy()
+    key = d["trial"] * 3 + d["state"] + 1
+    for k in np.unique(key):
+        r_ = key == k
+        d["Y"][r_] = d["Y"][r_] - _nanmean0(d["Y"][r_])
     d["fold"] = np.clip((d["pos"] // FOLD_S).astype(int), 0, None)
     d["unit"] = d["dwell"] if ctx["frozen"] else d["trial"] * 1000 + d["dwell"]
     d["lags"] = (np.arange(n_lag) + 0.5) * lag_dt
+    d["rois"] = rois
     return d
+
+
+class _Stats:
+    """Sufficient statistics of a design by (state, fold) over the rows one ROI can use, so a
+    filter for either state with any fold held out is one small solve instead of a pass over
+    the rows. ROIs of a plane that share the same usable rows share an instance."""
+
+    def __init__(self, A, state, fold, usable):
+        self.rows, self.n, self.sA, self.AtA = {}, {}, {}, {}
+        for q in (-1, 1):
+            for f in np.unique(fold):
+                r_ = usable & (state == q) & (fold == f)
+                if r_.any():
+                    a = A[r_]
+                    self.rows[(q, f)] = r_
+                    self.n[(q, f)] = int(r_.sum())
+                    self.sA[(q, f)] = a.sum(0)
+                    self.AtA[(q, f)] = a.T @ a
+
+    def keys(self, q, exclude=None):
+        return [k for k in self.n if k[0] == q and k[1] != exclude]
+
+
+def _stats_for(cache, d, usable):
+    """The _Stats for this usable-row pattern of a plane's design, built once per pattern."""
+    key = usable.tobytes()
+    if key not in cache:
+        cache[key] = _Stats(d["A"], d["state"], d["fold"], usable)
+    return cache[key]
+
+
+def _fit_stats(S, A, y, q, lam, P, exclude=None):
+    """Ridge filter (second-difference penalty, lam relative to trace(A'A)/n) for state q on every
+    fold but `exclude`, from the stored statistics plus this ROI's A'y. Returns the filter, the
+    A and y means it was centred on, and the rows it used."""
+    keys = S.keys(q, exclude)
+    n = sum(S.n[k] for k in keys)
+    rows = np.zeros(y.size, bool)
+    for k in keys:
+        rows |= S.rows[k]
+    ax = sum(S.sA[k] for k in keys) / n
+    ay = y[rows].sum() / n
+    C = sum(S.AtA[k] for k in keys) - n * np.outer(ax, ax)
+    c = A[rows].T @ y[rows] - n * ax * ay
+    b = np.linalg.solve(C + lam * (np.trace(C) / C.shape[0]) * P, c)
+    return b, ax, ay, rows
+
+
+def _heldout_r(S, A, y, q, lam, P):
+    """Held-out r of state q's filter for one ROI: each fold predicted by a fit on the others."""
+    pred, obs = [], []
+    for k in S.keys(q):
+        b, ax, ay, _ = _fit_stats(S, A, y, q, lam, P, exclude=k[1])
+        r_ = S.rows[k]
+        pred.append((A[r_] - ax) @ b + ay)
+        obs.append(y[r_])
+    if len(pred) < 2:
+        return np.nan
+    pred, obs = np.concatenate(pred), np.concatenate(obs)
+    return float(np.corrcoef(pred, obs)[0, 1]) if pred.size > 2 else np.nan
 
 
 def penalty(n):
@@ -454,197 +524,169 @@ def _scale(A, h, sd):
     return sd / s if s > 0 else np.nan
 
 
-def analyse_channel(ctx, ch, keep, filter_length=3.0, lag_dt=0.02, steady_start=None, first_dwell=2,
-                    n_rolls=14, n_boot=1000, ridge=None, seed=0, pos_range=(-np.inf, np.inf), n_cal=8,
-                    log=print):
-    """Pooled-filter LN analysis. Returns (results dict, arrays dict for figures).
+def _pop(vals, rng, n_boot):
+    """Median across ROIs and its 95% CI from resampling ROIs. (nan, [nan, nan], 0) if none."""
+    v = np.asarray(vals, float)
+    v = v[np.isfinite(v)]
+    if v.size == 0:
+        return np.nan, [np.nan, np.nan], 0
+    idx = rng.integers(0, v.size, (n_boot, v.size))
+    return float(np.median(v)), ci(np.median(v[idx], 1)).tolist(), int(v.size)
 
-    pos_range restricts every row to that span of stimulus time (the cross-fit check)."""
-    rng = np.random.default_rng(seed)
-    n_lag = int(round(filter_length / lag_dt))
-    steady_start = filter_length if steady_start is None else steady_start
 
-    def rows(roll_s=0.0):
-        d = pooled_rows(ctx, ch, keep, n_lag, lag_dt, first_dwell, roll_s=roll_s)
-        m = (d["pos"] >= pos_range[0]) & (d["pos"] < pos_range[1])
-        return {k: (v[m] if isinstance(v, np.ndarray) and v.shape[:1] == m.shape else v) for k, v in d.items()}
-    d = rows()
-    lags = d["lags"]
-    P = penalty(n_lag)
+def _pop_ratio_of_medians(a, b, rng, n_boot):
+    """median(a) / median(b) over the ROIs where both are finite, with a CI from resampling ROIs
+    jointly. Used where a per-ROI quotient would be unstable (a noisy denominator near zero)."""
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    f = np.isfinite(a) & np.isfinite(b)
+    a, b = a[f], b[f]
+    if a.size == 0:
+        return np.nan, [np.nan, np.nan]
+    idx = rng.integers(0, a.size, (n_boot, a.size))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return float(np.median(a) / np.median(b)), ci(np.median(a[idx], 1) / np.median(b[idx], 1)).tolist()
+
+
+def _pop_curve(M, rng, n_boot):
+    """Median across ROIs of a (n_roi, n_bin) array per bin, with ROI-resampling CI; NaN bins ignored."""
+    M = np.asarray(M, float)
+    good = np.isfinite(M).any(1)
+    M = M[good]
+    if M.shape[0] == 0:
+        return np.full(M.shape[1], np.nan), np.full((2, M.shape[1]), np.nan)
+    idx = rng.integers(0, M.shape[0], (n_boot, M.shape[0]))
+    return np.nanmedian(M, 0), ci(np.nanmedian(M[idx], 1))
+
+
+def _analyse_roi(d, j, S, lam, P, sd, steady_start, n_boot, n_cal, rng):
+    """One ROI (column j of a plane design) through the whole LN analysis: filters in each
+    contrast, B&M generators, gain and shared-range slopes (own filter and high-filter readouts),
+    the non-adapting reference, gain against time since the switch, and the stretch. Returns a
+    dict, or None if either contrast has fewer than two folds of usable rows."""
+    if any(len(S.keys(q)) < 2 for q in (-1, 1)):
+        return None
+    A, lags = d["A"], d["lags"]
+    lag_dt = float(lags[1] - lags[0])
+    y = d["Y"][:, j]
+    ok = np.isfinite(y)
+    yz = np.where(ok, y, 0.0)                    # unusable rows never enter a fit or a sum
+    n = y.size
     ss = d["since"] >= steady_start
-    st_m = {q: (d["state"] == (1 if q else -1)) & ss for q in (0, 1)}     # 0 low, 1 high
-    sd = {0: ctx["sd_state"][-1], 1: ctx["sd_state"][1]}
-    out = dict(n_roi=int(len(keep)), n_rows=int(d["y"].size), n_planes=int(np.unique(d["plane"]).size),
-               lag_dt=lag_dt, filter_length=filter_length, steady_start=steady_start,
-               first_dwell=first_dwell, frozen=bool(ctx["frozen"]), pos_range=[float(x) for x in pos_range])
+    st_m = {q: ok & ss & (d["state"] == (1 if q else -1)) for q in (0, 1)}
+    is_q = {q: ok & (d["state"] == (1 if q else -1)) for q in (0, 1)}
+    out = dict(cv_r=[_heldout_r(S, A, yz, -1, lam, P), _heldout_r(S, A, yz, 1, lam, P)],
+               n_rows=int(ok.sum()))
+    h = {q: _fit_stats(S, A, yz, (1 if q else -1), lam, P)[0] for q in (0, 1)}
+    out["h"] = h
+    out["h_scaled"] = {q: h[q] * _scale(A[st_m[q]], h[q], sd[q]) for q in (0, 1)}
+    new = (lags[None, :] + lag_dt / 2) <= d["since"][:, None]       # tap wholly after the switch
+    folds = sorted({k[1] for k in S.n})
 
-    def heldout(lam, A=None):
-        A = d["A"] if A is None else A
-        r = []
-        for q in (0, 1):
-            m = st_m[q]
-            pred, _ = cv_predict(A[m], d["y"][m], d["fold"][m], lam, P)
-            r.append(float(np.corrcoef(pred, d["y"][m])[0, 1]))
-        return r
-
-    grid = RIDGE_GRID if ridge is None else np.array([float(ridge)])
-    sc = [sum(heldout(l)) for l in grid]
-    lam = float(grid[int(np.argmax(sc))])
-    r_lh = heldout(lam)
-    null = np.array([heldout(lam, rows(k * 2 * ctx["dwell_s"])["A"]) for k in range(1, n_rolls + 1)]
-                    or [[np.nan, np.nan]])
-    out.update(ridge=lam, cv_r_low=r_lh[0], cv_r_high=r_lh[1], null_max_low=float(null[:, 0].max()),
-               null_max_high=float(null[:, 1].max()),
-               p_low=float((1 + np.sum(null[:, 0] >= r_lh[0])) / (1.0 + n_rolls)),
-               p_high=float((1 + np.sum(null[:, 1] >= r_lh[1])) / (1.0 + n_rolls)))
-    # None when no null was run (the cross-fit repeats), not False
-    out["has_filter_both_states"] = (bool(r_lh[1] > null[:, 1].max() and r_lh[0] > null[:, 0].max())
-                                     if n_rolls else None)
-    log('  {}: {} ROIs in {} planes, {} rows; ridge {:g}; held-out r low {:.3f} high {:.3f}, null max '
-        '{:.3f} {:.3f}'.format(ch, out["n_roi"], out["n_planes"], out["n_rows"], lam, r_lh[0], r_lh[1],
-                               null[:, 0].max(), null[:, 1].max()))
-
-    # steady filters on all steady rows, and per fold for the out-of-sample generators
-    h = {q: fit(d["A"][st_m[q]], d["y"][st_m[q]], lam, P)[0] for q in (0, 1)}
-    n = d["y"].size
-    new = (lags[None, :] + lag_dt / 2) <= d["since"][:, None]           # tap wholly after the switch
-    fold_ids = np.unique(d["fold"])
-    is_q = {q: d["state"] == (1 if q else -1) for q in (0, 1)}
-
-    def generators(y, split=True, own=True):
+    def generators(yv, split=True, own=True):
         """Each row through a filter fitted without the row's fold, B&M scaled in its state.
         own=True: each state's own filter (the convention). own=False: the high-contrast filter
-        in both states -- immune to noise in the low-contrast filter, but blind to a change of
+        in both states -- immune to noise in the low-contrast filter, blind to a change of
         shape. Also returns the raw fold prediction (for residuals)."""
-        g_own, g_new, g_old, pred = np.full(n, np.nan), np.zeros(n), np.zeros(n), np.full(n, np.nan)
-        for f in fold_ids:
+        g, g_new, g_old, pred = np.full(n, np.nan), np.zeros(n), np.zeros(n), np.full(n, np.nan)
+        for f in folds:
             te = d["fold"] == f
             hf = {}
             for q in (0, 1):
-                tr = st_m[q] & ~te
-                b, ax, ay = fit(d["A"][tr], y[tr], lam, P)
-                hf[q] = (b, _scale(d["A"][tr], b, sd[q]), ax, ay)
+                b, ax, ay, tr = _fit_stats(S, A, yv, (1 if q else -1), lam, P, exclude=f)
+                hf[q] = (b, _scale(A[tr], b, sd[q]), ax, ay, tr)
             for q in (0, 1):
                 cur = te & is_q[q]
-                hc = hf[q][0] * hf[q][1] if own else hf[1][0] * _scale(d["A"][st_m[q] & ~te], hf[1][0], sd[q])
-                g_own[cur] = d["A"][cur] @ hc
-                pred[cur] = (d["A"][cur] - hf[q][2]) @ hf[q][0] + hf[q][3]
+                if not cur.any():
+                    continue
+                hc = hf[q][0] * hf[q][1] if own else hf[1][0] * _scale(A[hf[q][4]], hf[1][0], sd[q])
+                g[cur] = A[cur] @ hc
+                pred[cur] = (A[cur] - hf[q][2]) @ hf[q][0] + hf[q][3]
                 if split:
-                    g_new[cur] = (d["A"][cur] * new[cur]) @ hc
-                    g_old[cur] = (d["A"][cur] * ~new[cur]) @ (hf[1 - q][0] * hf[1 - q][1])
-        return g_own, g_new, g_old, pred
+                    g_new[cur] = (A[cur] * new[cur]) @ hc
+                    g_old[cur] = (A[cur] * ~new[cur]) @ (hf[1 - q][0] * hf[1 - q][1])
+        return g, g_new, g_old, pred
 
-    g_own, g_new, g_old, pred = generators(d["y"])
-    short = lags < 0.6
-    for q, nm in ((0, "low"), (1, "high")):
-        hs = h[q][short]
-        i, j0, j1 = int(np.argmax(np.abs(hs))), int(np.argmin(hs)), int(np.argmax(hs))
-        out["filter_" + nm] = dict(peak_abs_lag=float(lags[i]), trough_lag=float(lags[j0]),
-                                   trough=float(hs[j0]), peak_lag=float(lags[j1]), peak=float(hs[j1]))
-
-    units = np.unique(d["unit"])
+    g_own, g_new, g_old, pred = generators(yz)
+    g_hf = generators(yz, split=False, own=False)[0]
+    units = np.unique(d["unit"][ok])
     uidx = np.searchsorted(units, d["unit"])
     nu = units.size
     W = [np.ones(nu)] + [_boot_w(nu, rng) for _ in range(n_boot)]
 
-    def slope_stats(m, g=None, y=None):
-        g = g_own[m] if g is None else g[m]
-        y = d["y"][m] if y is None else y[m]
-        u = uidx[m]
-        return np.stack([np.bincount(u, minlength=nu), np.bincount(u, g, nu), np.bincount(u, y, nu),
-                         np.bincount(u, g * g, nu), np.bincount(u, g * y, nu)], 1)
+    def slope_stats(m, g, yv):
+        u, gm, ym = uidx[m], g[m], yv[m]
+        return np.stack([np.bincount(u, minlength=nu), np.bincount(u, gm, nu), np.bincount(u, ym, nu),
+                         np.bincount(u, gm * gm, nu), np.bincount(u, gm * ym, nu)], 1)
 
-    def slope(S, w):
-        k, sg, sy, sgg, sgy = (S * w[:, None]).sum(0)
-        return (k * sgy - sg * sy) / (k * sgg - sg * sg)
+    def slope(Sx, w):
+        k, sg, sy, sgg, sgy = (Sx * w[:, None]).sum(0)
+        den = k * sgg - sg * sg
+        return (k * sgy - sg * sy) / den if den > 0 else np.nan
 
-    def ratios(g, y):
+    def ratios(g, yv):
         """Point estimates of (whole-range, shared-range) low/high slope ratios."""
         one = np.ones(nu)
         lim_ = np.percentile(g[st_m[0]], [1, 99])
         in_ = (g >= lim_[0]) & (g <= lim_[1])
-        s = [[slope(slope_stats(st_m[q] & sel, g, y), one) for q in (0, 1)] for sel in (np.ones(n, bool), in_)]
+        s = [[slope(slope_stats(st_m[q] & sel, g, yv), one) for q in (0, 1)]
+             for sel in (np.ones(n, bool), in_)]
         return s[0][0] / s[0][1], s[1][0] / s[1][1]
 
-    g_hf = generators(d["y"], split=False, own=False)[0]
     for sfx, g in (("", g_own), ("_high_filter", g_hf)):
-        G = {q: np.array([slope(slope_stats(st_m[q], g), w) for w in W]) for q in (0, 1)}
-        lim = np.percentile(g[st_m[0]], [1, 99])          # the generator range the low state covers
+        G = {q: np.array([slope(slope_stats(st_m[q], g, yz), w) for w in W]) for q in (0, 1)}
+        lim = np.percentile(g[st_m[0]], [1, 99])      # the generator range the low state covers
         inr = (g >= lim[0]) & (g <= lim[1])
-        SR = {q: np.array([slope(slope_stats(st_m[q] & inr, g), w) for w in W]) for q in (0, 1)}
+        SR = {q: np.array([slope(slope_stats(st_m[q] & inr, g, yz), w) for w in W]) for q in (0, 1)}
         for key, X in (("gain", G), ("shared_range", SR)):
-            out[key + sfx] = dict(low=float(X[0][0]), high=float(X[1][0]), ratio=float(X[0][0] / X[1][0]),
-                                  ci=ci(X[0][1:] / X[1][1:]).tolist(), low_ci=ci(X[0][1:]).tolist(),
-                                  high_ci=ci(X[1][1:]).tolist())
+            with np.errstate(divide="ignore", invalid="ignore"):
+                out[key + sfx] = dict(low=float(X[0][0]), high=float(X[1][0]), ratio=float(X[0][0] / X[1][0]),
+                                      ci=ci(X[0][1:] / X[1][1:]).tolist())
         out["shared_range" + sfx]["range"] = lim.tolist()
         out["shared_range" + sfx]["frac_high_rows_in_range"] = float(inr[st_m[1]].mean())
-    lim = out["shared_range"]["range"]
+    out["generator_sd"] = dict(low=float(g_own[st_m[0]].std()), high=float(g_own[st_m[1]].std()))
+    out["nl"] = {q: (g_own[st_m[q]], yz[st_m[q]]) for q in (0, 1)}
 
-    # THE REFERENCE A RATIO HAS TO BE READ AGAINST. Three things move a NON-ADAPTING cell's ratio
-    # away from 1. (1) A noisy filter shrinks the slope through it -- part of the generator is
-    # filter error the response does not follow -- and the low-contrast filter is the noisier
-    # one; where the low-contrast response is weak this can take the ratio most of the way to 0.
-    # (2) A static nonlinearity that is not a straight line gives the two contrasts different
-    # whole-range slopes. (3) With frozen noise the low and high dwells are different finite
-    # samples of the probe whose slow power need not match: on JS256_x_JS261/fly_012 the low
-    # dwells carry ~27% more power at 2 s, and its slow filter turns that into a ratio of 1.22
-    # even for a linear cell. All three are measured rather than assumed. The response is
-    # replaced by a non-adapting cell -- the high-contrast filter followed by the high-contrast
-    # nonlinearity as measured, the same in both states -- plus this channel's own residuals
-    # (sign-flipped per unit to vary their alignment), and run through the same estimator.
-    # ratio_vs_static = measured / what it recovers there.
-    if n_cal and (not np.isfinite(out["null_max_high"]) or r_lh[1] > out["null_max_high"]):
-        rng_c = np.random.default_rng(seed + 1)
-        x = d["A"] @ h[1]
+    # THE REFERENCE A RATIO HAS TO BE READ AGAINST: this ROI replaced by a non-adapting cell --
+    # its high-contrast filter followed by its high-contrast nonlinearity as measured, the same
+    # in both states -- plus its own residuals (sign-flipped per unit to vary their alignment),
+    # through the same estimators. Three things move that cell's ratio away from 1: a noisy
+    # filter shrinks the slope through it (the low-contrast filter is the noisier one); a static
+    # nonlinearity that is not a straight line gives the two contrasts different whole-range
+    # slopes; and with frozen noise the low and high dwells are different finite samples of the
+    # probe whose slow power need not match. ratio_vs_static = measured / what it recovers.
+    keys = ("gain", "shared_range", "gain_high_filter", "shared_range_high_filter")
+    if n_cal and np.isfinite(out["cv_r"][1]):
+        x = A @ h[1]
         hm = st_m[1]
         e_ = np.quantile(x[hm], np.linspace(0, 1, 21))
         b_ = np.clip(np.searchsorted(e_, x[hm], "right") - 1, 0, 19)
-        xs = np.array([x[hm][b_ == i].mean() for i in range(20)])
-        ys_ = np.array([d["y"][hm][b_ == i].mean() for i in range(20)])
-        sig = np.interp(x, xs, ys_)                         # the high state's static nonlinearity
-        key = d["plane"] * 3 + d["state"] + 1
-        sig = sig - (np.bincount(key, sig) / np.maximum(np.bincount(key), 1))[key]
-        resid = d["y"] - pred
-        lin = x - (np.bincount(key, x) / np.maximum(np.bincount(key), 1))[key]
+        cnt = np.bincount(b_, minlength=20).astype(float)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            xs = np.bincount(b_, x[hm], 20) / cnt
+            ys_ = np.bincount(b_, yz[hm], 20) / cnt
+        okb = cnt > 0
+        sig = np.interp(x, xs[okb], ys_[okb])             # the high state's static nonlinearity
+        lin = x.copy()
+        for k in (0, 2):
+            r_ = ok & (d["state"] + 1 == k)
+            if r_.any():
+                sig[r_] -= sig[r_].mean()
+                lin[r_] -= lin[r_].mean()
+        resid = np.where(ok, yz - np.nan_to_num(pred), 0.0)
         truth = (lin[st_m[0]].std() / sd[0]) / (lin[st_m[1]].std() / sd[1])
         rec = []
         for _ in range(n_cal):
-            flip = rng_c.choice([-1.0, 1.0], nu)[uidx]
-            ys = sig + flip * resid
+            flip = rng.choice([-1.0, 1.0], nu)[uidx]
+            ys = np.where(ok, sig + flip * resid, 0.0)
             rec.append(ratios(generators(ys, split=False)[0], ys) + ratios(generators(ys, False, False)[0], ys))
         rec = np.array(rec)
-        keys = ("gain", "shared_range", "gain_high_filter", "shared_range_high_filter")
-        out["static_reference"] = dict(
-            truth_linear=float(truth), nonlinearity_x=xs.tolist(), nonlinearity_y=ys_.tolist(), n=int(n_cal),
-            note="a non-adapting cell = the high filter and the high nonlinearity in both states. "
-                 "truth_linear = its exact B&M ratio if the nonlinearity were a straight line; the others = "
-                 "what each estimator recovers for it at this noise (mean, sd over n draws)",
-            **{k: float(rec[:, i].mean()) for i, k in enumerate(keys)},
-            **{k + "_sd": float(rec[:, i].std()) for i, k in enumerate(keys)})
+        out["static"] = dict(truth_linear=float(truth), nonlinearity_x=xs, nonlinearity_y=ys_,
+                             mean=rec.mean(0), sd=rec.std(0))
         for i, key_ in enumerate(keys):
             ref = rec[:, i].mean()
-            out[key_]["ratio_vs_static"] = float(out[key_]["ratio"] / ref)
-            out[key_]["ci_vs_static"] = (np.array(out[key_]["ci"]) / ref).tolist()
-        log('  {}: a non-adapting cell reads {:.3f} if linear; through the estimators {}'.format(
-            ch, truth, ', '.join('{} {:.2f}+-{:.2f}'.format(k, rec[:, i].mean(), rec[:, i].std()) for i, k in enumerate(keys))))
-        log('  {}: RELATIVE TO A NON-ADAPTING CELL: '.format(ch) + '; '.join(
-            '{} {:.2f} [{:.2f}, {:.2f}]'.format(k, out[k]["ratio_vs_static"], *out[k]["ci_vs_static"]) for k in keys))
-    if out["has_filter_both_states"] is False:
-        log('  WARNING {}: the {} filter does not beat its null, so no gain ratio here is interpretable'.format(
-            ch, "low-contrast" if r_lh[1] > out["null_max_high"] else "high-contrast"))
-    out["generator_sd"] = dict(low=float(g_own[st_m[0]].std()), high=float(g_own[st_m[1]].std()))
-    log('  {}: steady gain low {:.4f} high {:.4f}, ratio {:.2f} [{:.2f}, {:.2f}]; shared-range ratio {:.2f} '
-        '[{:.2f}, {:.2f}]'.format(ch, out["gain"]["low"], out["gain"]["high"], out["gain"]["ratio"], *out["gain"]["ci"],
-                                  out["shared_range"]["ratio"], *out["shared_range"]["ci"]))
-
-    # nonlinearities for the figure (12 quantile bins per state)
-    nl = {}
-    for q in (0, 1):
-        g, y = g_own[st_m[q]], d["y"][st_m[q]]
-        e = np.quantile(g, np.linspace(0, 1, 13))
-        b = np.clip(np.searchsorted(e, g, "right") - 1, 0, 11)
-        nl[q] = np.array([[g[b == i].mean(), y[b == i].mean(), y[b == i].std() / np.sqrt((b == i).sum())]
-                          for i in range(12)])
+            with np.errstate(divide="ignore", invalid="ignore"):
+                out[key_]["ratio_vs_static"] = float(out[key_]["ratio"] / ref)
+                out[key_]["ci_vs_static"] = (np.array(out[key_]["ci"]) / ref).tolist()
 
     # gain against time since the switch: y ~ a g_new + b g_old + c, per bin
     nb = GAIN_BINS.size - 1
@@ -652,18 +694,18 @@ def analyse_channel(ctx, ch, keep, filter_length=3.0, lag_dt=0.02, steady_start=
     X = np.c_[g_new, g_old, np.ones(n)]
     dyn = {}
     for q in (0, 1):
-        m = d["state"] == (1 if q else -1)
-        S = np.zeros((nu, nb, 3, 3))
+        m = is_q[q]
+        Sm = np.zeros((nu, nb, 3, 3))
         B = np.zeros((nu, nb, 3))
         for b_ in range(nb):
             mb = m & (bins == b_)
             for a_ in range(3):
-                B[:, b_, a_] = np.bincount(uidx[mb], X[mb, a_] * d["y"][mb], nu)
+                B[:, b_, a_] = np.bincount(uidx[mb], X[mb, a_] * yz[mb], nu)
                 for c_ in range(3):
-                    S[:, b_, a_, c_] = np.bincount(uidx[mb], X[mb, a_] * X[mb, c_], nu)
+                    Sm[:, b_, a_, c_] = np.bincount(uidx[mb], X[mb, a_] * X[mb, c_], nu)
 
         def gains(w):
-            A_ = (S * w[:, None, None, None]).sum(0)
+            A_ = (Sm * w[:, None, None, None]).sum(0)
             b_ = (B * w[:, None, None]).sum(0)
             tr = np.trace(A_[:, :2, :2], axis1=1, axis2=2)[:, None, None]
             empty = A_[:, 2, 2] <= 0                     # a bin no drawn unit has rows in
@@ -674,25 +716,26 @@ def analyse_channel(ctx, ch, keep, filter_length=3.0, lag_dt=0.02, steady_start=
         dyn[q] = np.array([gains(w) for w in W])
     ssb = GAIN_BINS[:-1] >= steady_start
     early = (GAIN_BINS[:-1] >= 0.25) & (GAIN_BINS[1:] <= 1.5)
-    out["gain_after_switch"] = dict(bins=GAIN_BINS.tolist())
+    out["dyn"] = {}
     for q, nm in ((0, "to_low"), (1, "to_high")):
-        base = np.nanmean(dyn[q][:, ssb], 1, keepdims=True)
-        rel = dyn[q] / base
-        e = np.nanmean(dyn[q][:, early], 1) / base[:, 0]
-        out["gain_after_switch"][nm] = dict(gain=dyn[q][0].tolist(), gain_ci=ci(dyn[q][1:]).tolist(),
-                                            relative=rel[0].tolist(), relative_ci=ci(rel[1:]).tolist(),
-                                            early_rel=float(e[0]), early_rel_ci=ci(e[1:]).tolist())
+        with np.errstate(invalid="ignore", divide="ignore"):
+            base = np.nanmean(dyn[q][:, ssb], 1, keepdims=True)
+            rel = dyn[q] / base
+            e = np.nanmean(dyn[q][:, early], 1) / base[:, 0]
+        out["dyn"][nm] = dict(gain=dyn[q][0], relative=rel[0], early_rel=float(e[0]),
+                              early_rel_ci=ci(e[1:]).tolist())
 
-    # filter stretch, steady low against steady high, bootstrap over units
+    # filter stretch, steady low against steady high (short filters refitted), bootstrap over units
+    short = lags < 0.6
     ns = int(short.sum())
     XX = np.zeros((2, nu, ns, ns))
     XY = np.zeros((2, nu, ns))
     for q in (0, 1):
         m = st_m[q]
-        A_ = d["A"][m][:, short] - d["A"][m][:, short].mean(0)
-        y_ = d["y"][m] - d["y"][m].mean()
+        A_ = A[m][:, short] - A[m][:, short].mean(0)
+        y_ = yz[m] - yz[m].mean()
         um = uidx[m]
-        for k in range(nu):
+        for k in np.unique(um):
             uu = um == k
             XX[q, k] = A_[uu].T @ A_[uu]
             XY[q, k] = A_[uu].T @ y_[uu]
@@ -702,20 +745,219 @@ def analyse_channel(ctx, ch, keep, filter_length=3.0, lag_dt=0.02, steady_start=
         hs = []
         for q in (0, 1):
             A_ = (XX[q] * w[:, None, None]).sum(0)
+            if not np.trace(A_) > 0:                 # a draw with no rows in this state
+                return np.nan
             hs.append(np.linalg.solve(A_ + lam * np.trace(A_) / ns * Ps, (XY[q] * w[:, None]).sum(0)))
         return stretch_fit(hs[0], hs[1], lags[short])
-    sv = np.array([stretch(w) for w in W[:301]])
-    out["stretch_low_vs_high"] = dict(value=float(sv[0]), ci=ci(sv[1:]).tolist(),
-                                      frac_at_bound=float(np.mean((sv[1:] <= 0.5) | (sv[1:] >= 2.0))))
+    sv = np.array([stretch(w) for w in W[:101]])
+    out["stretch"] = dict(value=float(sv[0]), ci=ci(sv[1:]).tolist(),
+                          at_bound=bool(sv[0] <= 0.5 or sv[0] >= 2.0))
+    out["nu"] = int(nu)
+    return out
 
-    # bm_scale: the factor per state that puts h in the Baccus & Meister convention on the steady
-    # rows (var(F * s) = var(s)); with sd_state it is what visanalysis.model.export needs to turn
-    # the pair into a library model in contrast units
-    arrays = dict(lags=lags, h_low=h[0], h_high=h[1], nl_low=nl[0], nl_high=nl[1],
-                  gain_dyn_low=dyn[0], gain_dyn_high=dyn[1], null=null,
-                  bm_scale=np.array([_scale(d["A"][st_m[0]], h[0], sd[0]), _scale(d["A"][st_m[1]], h[1], sd[1])]),
-                  sd_state=np.array([sd[0], sd[1]]))
+
+def analyse_channel(ctx, ch, keep, filter_length=3.0, lag_dt=0.02, steady_start=None, first_dwell=2,
+                    n_rolls=14, n_boot=1000, ridge=None, seed=0, pos_range=(-np.inf, np.inf), n_cal=8,
+                    log=print):
+    """LN analysis of every kept ROI on its own, then combined across ROIs.
+
+    Each ROI gets its own filter per contrast, nonlinearity, gain and shared-range slopes (own
+    filter and high-filter readouts), non-adapting reference, gain dynamics and stretch. The
+    population numbers are medians across ROIs with 95% CIs from resampling ROIs; every per-ROI
+    value is returned in the arrays, with its own dwell-bootstrap CI where one is computed. One
+    ridge value per channel, chosen by the median held-out r across ROIs.
+
+    pos_range restricts every row to that span of stimulus time (the cross-fit check).
+    Returns (results dict, arrays dict for figures)."""
+    rng = np.random.default_rng(seed)
+    n_lag = int(round(filter_length / lag_dt))
+    steady_start = filter_length if steady_start is None else steady_start
+    P = penalty(n_lag)
+    sd = {0: ctx["sd_state"][-1], 1: ctx["sd_state"][1]}
+    R = ctx["resp"][ch]
+    keep = np.asarray(keep, int)
+    planes = [(int(p), keep[R["plane"][keep] == p]) for p in np.unique(R["plane"][keep])]
+
+    def designs_at(roll_s=0.0):
+        return [plane_rows(ctx, ch, rois, n_lag, lag_dt, first_dwell, roll_s=roll_s, pos_range=pos_range)
+                for _, rois in planes]
+
+    def usable(d, j):
+        return np.isfinite(d["Y"][:, j]) & (d["since"] >= steady_start)
+
+    def per_roi_r(dlist, lam):
+        """Held-out r (low, high) of every kept ROI at this ridge, in kept order."""
+        rr = []
+        for d in dlist:
+            cache = d.setdefault("_cache", {})
+            for j in range(d["rois"].size):
+                S = _stats_for(cache, d, usable(d, j))
+                yz = np.where(np.isfinite(d["Y"][:, j]), d["Y"][:, j], 0.0)
+                if any(len(S.keys(q)) < 2 for q in (-1, 1)):
+                    rr.append([np.nan, np.nan])
+                    continue
+                rr.append([_heldout_r(S, d["A"], yz, -1, lam, P), _heldout_r(S, d["A"], yz, 1, lam, P)])
+        return np.array(rr).reshape(-1, 2)
+
+    designs = designs_at()
+    rois = np.concatenate([d["rois"] for d in designs])
+    grid = RIDGE_GRID if ridge is None else np.array([float(ridge)])
+    scores = [np.nanmedian(per_roi_r(designs, l).sum(1)) for l in grid]
+    lam = float(grid[int(np.nanargmax(scores))])
+    r_roi = per_roi_r(designs, lam)                                     # (n_roi, 2)
+    null = np.array([per_roi_r(designs_at((k + 1) * 2 * ctx["dwell_s"]), lam) for k in range(n_rolls)]
+                    ).reshape(n_rolls, rois.size, 2) if n_rolls else np.full((0, rois.size, 2), np.nan)
+    with np.errstate(invalid="ignore"):
+        null_max = np.nanmax(null, 0) if n_rolls else np.full((rois.size, 2), np.nan)   # per ROI, per state
+    passes = r_roi > null_max                                            # (n_roi, 2); False where NaN
+
+    # the LN analysis of every ROI
+    res = []
+    for d in designs:
+        for j in range(d["rois"].size):
+            S = _stats_for(d["_cache"], d, usable(d, j))
+            res.append(_analyse_roi(d, j, S, lam, P, sd, steady_start, n_boot, n_cal, rng))
+    good = np.array([r_ is not None for r_ in res])
+
+    def col(fn, default=np.nan):
+        return np.array([fn(r_) if r_ is not None else default for r_ in res], float)
+
+    out = dict(n_roi=int(rois.size), n_roi_analysed=int(good.sum()), n_rows=int(col(lambda r_: r_["n_rows"], 0).sum()),
+               n_planes=len(planes), lag_dt=lag_dt, filter_length=filter_length, steady_start=steady_start,
+               first_dwell=first_dwell, frozen=bool(ctx["frozen"]), pos_range=[float(x) for x in pos_range],
+               ridge=lam, combine="median across ROIs; CIs from resampling ROIs",
+               cv_r_low=float(np.nanmedian(r_roi[:, 0])), cv_r_high=float(np.nanmedian(r_roi[:, 1])),
+               null_max_low=float(np.nanmedian(null_max[:, 0])), null_max_high=float(np.nanmedian(null_max[:, 1])),
+               n_roi_filter_low=int(passes[:, 0].sum()), n_roi_filter_high=int(passes[:, 1].sum()),
+               n_roi_filter_both=int(passes.all(1).sum()))
+    with np.errstate(invalid="ignore"):
+        out["p_low"] = float(np.nanmedian((1 + (null[:, :, 0] >= r_roi[None, :, 0]).sum(0)) / (1.0 + n_rolls))) if n_rolls else np.nan
+        out["p_high"] = float(np.nanmedian((1 + (null[:, :, 1] >= r_roi[None, :, 1]).sum(0)) / (1.0 + n_rolls))) if n_rolls else np.nan
+    # None when no null was run (the cross-fit repeats), not False. The population has a filter in a
+    # state when the median ROI beats the median ROI's null there.
+    out["has_filter_both_states"] = (bool(out["cv_r_high"] > out["null_max_high"] and out["cv_r_low"] > out["null_max_low"])
+                                     if n_rolls else None)
+    log('  {}: {} ROIs in {} planes ({} analysed, {} rows); ridge {:g}; median held-out r low {:.3f} high {:.3f}, '
+        'median null max {:.3f} {:.3f}; ROIs beating their null: low {}, high {}, both {}'.format(
+            ch, out["n_roi"], out["n_planes"], out["n_roi_analysed"], out["n_rows"], lam, out["cv_r_low"], out["cv_r_high"],
+            out["null_max_low"], out["null_max_high"], out["n_roi_filter_low"], out["n_roi_filter_high"], out["n_roi_filter_both"]))
+
+    # population filters: mean of the B&M-scaled per-ROI filters (sign preserved)
+    lags = designs[0]["lags"]
+    H = {q: np.array([r_["h_scaled"][q] if r_ is not None else np.full(n_lag, np.nan) for r_ in res]) for q in (0, 1)}
+    h = {q: np.nanmean(H[q], 0) if good.any() else np.full(n_lag, np.nan) for q in (0, 1)}
+    short = lags < 0.6
+    for q, nm in ((0, "low"), (1, "high")):
+        hs = h[q][short]
+        if np.all(np.isfinite(hs)):
+            i, j0, j1 = int(np.argmax(np.abs(hs))), int(np.argmin(hs)), int(np.argmax(hs))
+            out["filter_" + nm] = dict(peak_abs_lag=float(lags[i]), trough_lag=float(lags[j0]), trough=float(hs[j0]),
+                                       peak_lag=float(lags[j1]), peak=float(hs[j1]))
+        else:
+            out["filter_" + nm] = dict(peak_abs_lag=np.nan, trough_lag=np.nan, trough=np.nan, peak_lag=np.nan, peak=np.nan)
+
+    # gains: per-ROI ratios combined
+    keys = ("gain", "shared_range", "gain_high_filter", "shared_range_high_filter")
+    roi_arrays = dict(roi=rois, roi_cv_r=r_roi, roi_null_max=null_max, roi_pass=passes.astype(int))
+    for key in keys:
+        v, c, nk = _pop(col(lambda r_: r_[key]["ratio"]), rng, n_boot)
+        lo, lo_ci, _ = _pop(col(lambda r_: r_[key]["low"]), rng, n_boot)
+        hi, hi_ci, _ = _pop(col(lambda r_: r_[key]["high"]), rng, n_boot)
+        out[key] = dict(low=lo, high=hi, ratio=v, ci=c, low_ci=lo_ci, high_ci=hi_ci, n_roi=nk,
+                        roi_iqr=np.nanpercentile(col(lambda r_: r_[key]["ratio"]), [25, 75]).tolist() if nk else [np.nan, np.nan])
+        roi_arrays["roi_" + key + "_ratio"] = col(lambda r_: r_[key]["ratio"])
+        roi_arrays["roi_" + key + "_ci"] = np.array([r_[key]["ci"] if r_ is not None else [np.nan, np.nan] for r_ in res])
+        has_static = col(lambda r_: 1.0 if "ratio_vs_static" in r_[key] else 0.0, 0.0) > 0
+        if has_static.any():
+            # Measured and reference are both per-ROI quantities; the population comparison is
+            # median(measured) / median(reference) over ROIs, not the median of per-ROI quotients:
+            # a reference near zero (a noisy low-contrast filter) makes the quotient unstable.
+            vs = col(lambda r_: r_[key].get("ratio_vs_static", np.nan))
+            meas = col(lambda r_: r_[key]["ratio"] if "static" in r_ else np.nan)
+            ref = col(lambda r_: r_["static"]["mean"][keys.index(key)] if "static" in r_ else np.nan)
+            v2, c2 = _pop_ratio_of_medians(meas, ref, rng, n_boot)
+            out[key]["ratio_vs_static"] = v2
+            out[key]["ci_vs_static"] = c2
+            out[key]["roi_median_ratio_vs_static"] = _pop(vs, rng, n_boot)[0]
+            roi_arrays["roi_" + key + "_ratio_vs_static"] = vs
+            roi_arrays["roi_" + key + "_static_ref"] = ref
+    lim = np.nanmedian(np.array([r_["shared_range"]["range"] if r_ is not None else [np.nan, np.nan] for r_ in res]), 0)
+    out["shared_range"]["range"] = lim.tolist()
+    out["shared_range"]["frac_high_rows_in_range"] = float(np.nanmedian(col(lambda r_: r_["shared_range"]["frac_high_rows_in_range"])))
+    out["shared_range_high_filter"]["range"] = np.nanmedian(
+        np.array([r_["shared_range_high_filter"]["range"] if r_ is not None else [np.nan, np.nan] for r_ in res]), 0).tolist()
+    out["generator_sd"] = dict(low=float(np.nanmedian(col(lambda r_: r_["generator_sd"]["low"]))),
+                               high=float(np.nanmedian(col(lambda r_: r_["generator_sd"]["high"]))))
+
+    # the non-adapting reference, per ROI then combined
+    with_static = [r_ for r_ in res if r_ is not None and "static" in r_]
+    if with_static:
+        rec = np.array([r_["static"]["mean"] for r_ in with_static])
+        truth = np.array([r_["static"]["truth_linear"] for r_ in with_static])
+        out["static_reference"] = dict(
+            truth_linear=float(np.nanmedian(truth)), n=int(len(with_static)), n_draws=int(n_cal),
+            note="per ROI: a non-adapting cell = that ROI's high filter and high nonlinearity in both states, "
+                 "with its own residuals. truth_linear = its exact B&M ratio if the nonlinearity were a straight "
+                 "line; the others = what each estimator recovers for it (medians across ROIs; _sd = median of "
+                 "each ROI's sd over its draws)",
+            **{k: float(np.nanmedian(rec[:, i])) for i, k in enumerate(keys)},
+            **{k + "_sd": float(np.nanmedian([r_["static"]["sd"][i] for r_ in with_static])) for i, k in enumerate(keys)})
+        roi_arrays["roi_truth_linear"] = col(lambda r_: r_["static"]["truth_linear"] if "static" in r_ else np.nan)
+        log('  {}: a non-adapting cell reads {:.3f} if linear (median ROI); through the estimators {}'.format(
+            ch, out["static_reference"]["truth_linear"],
+            ', '.join('{} {:.2f}'.format(k, out["static_reference"][k]) for k in keys)))
+        log('  {}: RELATIVE TO A NON-ADAPTING CELL (median ROI, CI over ROIs): '.format(ch) + '; '.join(
+            '{} {:.2f} [{:.2f}, {:.2f}]'.format(k, out[k]["ratio_vs_static"], *out[k]["ci_vs_static"])
+            for k in keys if "ratio_vs_static" in out[k]))
+    if out["has_filter_both_states"] is False:
+        log('  WARNING {}: the median ROI\'s {} filter does not beat its null, so no gain ratio here is '
+            'interpretable'.format(ch, "low-contrast" if out["cv_r_high"] > out["null_max_high"] else "high-contrast"))
+    log('  {}: steady gain low {:.4f} high {:.4f}, ratio {:.2f} [{:.2f}, {:.2f}] (ROI IQR {:.2f}-{:.2f}); shared-range '
+        'ratio {:.2f} [{:.2f}, {:.2f}]'.format(ch, out["gain"]["low"], out["gain"]["high"], out["gain"]["ratio"],
+                                               *out["gain"]["ci"], *out["gain"]["roi_iqr"], out["shared_range"]["ratio"],
+                                               *out["shared_range"]["ci"]))
+
+    # nonlinearities for the figure: every ROI's (generator, response) pairs together, 12 quantile bins
+    nl = {}
+    for q in (0, 1):
+        pairs = [r_["nl"][q] for r_ in res if r_ is not None]
+        if not pairs:
+            nl[q] = np.full((12, 3), np.nan)
+            continue
+        g = np.concatenate([p_[0] for p_ in pairs])
+        yv = np.concatenate([p_[1] for p_ in pairs])
+        e = np.quantile(g, np.linspace(0, 1, 13))
+        b = np.clip(np.searchsorted(e, g, "right") - 1, 0, 11)
+        nl[q] = np.array([[g[b == i].mean(), yv[b == i].mean(), yv[b == i].std() / np.sqrt(max((b == i).sum(), 1))]
+                          for i in range(12)])
+
+    # gain against time since the switch: per ROI, then the median ROI per bin
+    out["gain_after_switch"] = dict(bins=GAIN_BINS.tolist())
+    dyn_arr = {}
+    for q, nm in ((0, "to_low"), (1, "to_high")):
+        G = np.array([r_["dyn"][nm]["gain"] if r_ is not None else np.full(GAIN_BINS.size - 1, np.nan) for r_ in res])
+        Rl = np.array([r_["dyn"][nm]["relative"] if r_ is not None else np.full(GAIN_BINS.size - 1, np.nan) for r_ in res])
+        gm, gc = _pop_curve(G, rng, n_boot)
+        rm, rc = _pop_curve(Rl, rng, n_boot)
+        ev, ec, _ = _pop(col(lambda r_: r_["dyn"][nm]["early_rel"]), rng, n_boot)
+        out["gain_after_switch"][nm] = dict(gain=gm.tolist(), gain_ci=gc.tolist(), relative=rm.tolist(),
+                                            relative_ci=rc.tolist(), early_rel=ev, early_rel_ci=ec)
+        dyn_arr[q] = Rl
+        roi_arrays["roi_early_rel_" + nm] = col(lambda r_: r_["dyn"][nm]["early_rel"])
+
+    sv, sc_, _ = _pop(col(lambda r_: r_["stretch"]["value"]), rng, n_boot)
+    out["stretch_low_vs_high"] = dict(value=sv, ci=sc_,
+                                      frac_at_bound=float(np.nanmean(col(lambda r_: 1.0 if r_["stretch"]["at_bound"] else 0.0))))
+    roi_arrays["roi_stretch"] = col(lambda r_: r_["stretch"]["value"])
+
+    # bm_scale: the per-state factor that puts h_low / h_high in the Baccus & Meister convention.
+    # Every per-ROI filter is scaled before averaging, so the population filters already are, and
+    # the factor is 1; visanalysis.model.export reads it together with sd_state.
+    arrays = dict(lags=lags, h_low=h[0], h_high=h[1], H_low=H[0], H_high=H[1], nl_low=nl[0], nl_high=nl[1],
+                  gain_dyn_low=dyn_arr[0], gain_dyn_high=dyn_arr[1], null=null,
+                  bm_scale=np.array([1.0, 1.0]), sd_state=np.array([sd[0], sd[1]]), **roi_arrays)
     return out, arrays
+
 
 
 def stretch_fit(h, h0, lags):
@@ -736,72 +978,118 @@ def stretch_fit(h, h0, lags):
 # ── model-free gain (frozen seed only) ──────────────────────────────────────
 
 def _binned_by_dwell(ctx, ch, keep, bin_s, lo, hi):
-    """(n_ep, n_dwell, n_bin) pooled dF/F, binned by time from each dwell's start over [lo, hi)."""
+    """(n_roi, n_ep, n_dwell, n_bin) dF/F of each kept ROI, binned by time from each dwell's
+    start over [lo, hi); NaN where an ROI has no usable sample in a bin."""
     R = ctx["resp"][ch]
     keep = np.asarray(keep, int)
     dwell_s, n_dw = ctx["dwell_s"], ctx["n_dwell"]
     edges = np.arange(lo, hi + 1e-9, bin_s)
     nb = edges.size - 1
-    S = np.zeros((ctx["n_ep"], n_dw, nb))
+    S = np.zeros((keep.size, ctx["n_ep"], n_dw, nb))
     W = np.zeros_like(S)
+    where = {int(r): i for i, r in enumerate(keep)}
     for p in np.unique(R["plane"][keep]):
         rois = keep[R["plane"][keep] == p]
+        idx = np.array([where[int(r)] for r in rois])
         off = float(np.mean(R["off"][rois])) + R["scan"] / 2.0
         for e in range(ctx["n_ep"]):
             t = R["tvecs"][e] - ctx["pre"][e] + off
-            with np.errstate(invalid="ignore"):
-                y = np.nanmean(R["resp"][e][rois], axis=0)
+            Y = R["resp"][e][rois]                       # (n_roi_plane, time)
+            fin = np.isfinite(Y)
+            Yz = np.where(fin, Y, 0.0)
             for k in range(n_dw):
                 rel = t - k * dwell_s
-                m = (rel >= edges[0]) & (rel < edges[-1]) & np.isfinite(y)
+                m = (rel >= edges[0]) & (rel < edges[-1])
+                if not m.any():
+                    continue
                 b = np.searchsorted(edges, rel[m], "right") - 1
-                np.add.at(S[e, k], b, y[m] * rois.size)
-                np.add.at(W[e, k], b, rois.size)
+                ii = np.repeat(idx[:, None], m.sum(), 1).ravel()
+                bb = np.tile(b, idx.size)
+                np.add.at(S[:, e, k], (ii, bb), Yz[:, m].ravel())
+                np.add.at(W[:, e, k], (ii, bb), fin[:, m].ravel().astype(float))
     with np.errstate(invalid="ignore"):
         return S / np.where(W > 0, W, np.nan), 0.5 * (edges[1:] + edges[:-1])
 
 
-def model_free_gain(ctx, ch, keep, window=(2.0, 10.0), first_dwell=2, bin_s=0.1, n_boot=5000, seed=4):
-    """Stimulus-locked SD per state from the covariance between trials at the same stimulus
-    position. Needs every trial to show the same noise, so it returns None otherwise."""
+def model_free_gain(ctx, ch, keep, window=(2.0, 10.0), first_dwell=2, bin_s=0.25, n_boot=5000, seed=4,
+                    detrend=True):
+    """Stimulus-locked SD per state for each kept ROI, from the covariance between trials at the
+    same stimulus position; the population ratio is the median ROI, with a CI from resampling
+    ROIs. Needs every trial to show the same noise, so it returns None otherwise."""
     if not ctx["frozen"]:
         return None
     rng = np.random.default_rng(seed)
     M, cen = _binned_by_dwell(ctx, ch, keep, bin_s, 0.0, ctx["dwell_s"])
     w = (cen >= window[0]) & (cen < window[1])
     n_dw = ctx["n_dwell"]
-    lk, tot = np.full(n_dw, np.nan), np.full(n_dw, np.nan)
-    for k in range(first_dwell, n_dw):
-        seg = M[:, k, w]
-        seg = seg[np.isfinite(seg).mean(1) > 0.9]          # trials dropped as dark are absent
-        seg = seg[:, np.all(np.isfinite(seg), 0)]
-        x = seg - seg.mean(1, keepdims=True)
-        n = x.shape[0]
-        c = x @ x.T / x.shape[1]
-        lk[k] = (c.sum() - np.trace(c)) / (n * (n - 1))
-        tot[k] = np.trace(c) / n
     state_of = _state_of_dwells(ctx)
     hi = np.array([k for k in range(first_dwell, n_dw) if state_of[k] > 0])
     lo = np.array([k for k in range(first_dwell, n_dw) if state_of[k] < 0])
+    n_roi = M.shape[0]
+    # With a frozen seed, "the same stimulus position" is also "the same time since the switch".
+    # Each ROI's step and its relaxation repeat in every dwell of a state and in every trial, so
+    # they would count as stimulus-locked variance, most of all at low contrast where the probe
+    # response is small. Remove, per ROI and trial, the mean time course over that state's
+    # dwells. Each dwell loses 1/n of its own probe signal in the process, equally in both states
+    # when their dwell counts match, so the ratio is unaffected.
+    for ks in ((hi, lo) if detrend else ()):
+        with np.errstate(invalid="ignore"):
+            mu = np.nansum(M[:, :, ks, :], axis=2, keepdims=True) / np.maximum(
+                np.isfinite(M[:, :, ks, :]).sum(axis=2, keepdims=True), 1)
+        M[:, :, ks, :] = M[:, :, ks, :] - mu
+    lk, tot = np.full((n_roi, n_dw), np.nan), np.full((n_roi, n_dw), np.nan)
+    for i in range(n_roi):
+        for k in range(first_dwell, n_dw):
+            seg = M[i][:, k][:, w]                               # (trials, bins); not M[i, :, k, w],
+            # which puts the advanced axes first and hands back (bins, trials)
+            seg = seg[np.isfinite(seg).mean(1) > 0.9]          # trials dropped as dark are absent
+            seg = seg[:, np.all(np.isfinite(seg), 0)]
+            if seg.shape[0] < 2 or seg.shape[1] < 2:
+                continue
+            x = seg - seg.mean(1, keepdims=True)
+            n = x.shape[0]
+            c = x @ x.T / x.shape[1]
+            lk[i, k] = (c.sum() - np.trace(c)) / (n * (n - 1))
+            tot[i, k] = np.trace(c) / n
+    # Per ROI, the stimulus-locked variance in each state (a between-trial covariance, so noise
+    # does not enter it in expectation). The population SD ratio averages these covariances
+    # across ROIs BEFORE the square root: sqrt of a single ROI's covariance clipped at zero is
+    # biased upward wherever the locked variance is small against the noise, which is the low
+    # contrast state, and that bias would read as adaptation. Per-ROI ratios are returned too.
+    with np.errstate(invalid="ignore", divide="ignore"):
+        lk_h, lk_l = np.nanmean(lk[:, hi], 1), np.nanmean(lk[:, lo], 1)
+        sh_roi, sl_roi = np.sqrt(np.maximum(lk_h, 0)), np.sqrt(np.maximum(lk_l, 0))
+        ratio = np.where(sl_roi > 0, sh_roi / sl_roi, np.nan)
+    good = np.isfinite(lk_h) & np.isfinite(lk_l)
+    if not good.any():
+        return None
+    gh, gl = lk_h[good], lk_l[good]
 
-    def ratio(h, l):
-        sh, sl = np.sqrt(max(lk[h].mean(), 0)), np.sqrt(max(lk[l].mean(), 0))
-        return sh, sl, (sh / sl if sl > 0 else np.inf)
-    sh, sl, r = ratio(hi, lo)
-    b = np.array([ratio(rng.choice(hi, hi.size), rng.choice(lo, lo.size))[2] for _ in range(n_boot)])
-    bc = ci(b)
+    def sd_ratio(ix):
+        s_h, s_l = np.sqrt(max(gh[ix].mean(), 0)), np.sqrt(max(gl[ix].mean(), 0))
+        return s_h, s_l, (s_h / s_l if s_l > 0 else np.nan)
+    sh, sl, r = sd_ratio(np.arange(gh.size))
+    idx = rng.integers(0, gh.size, (n_boot, gh.size))
+    bc = ci(np.array([sd_ratio(ix)[2] for ix in idx]))
+    v = ratio[np.isfinite(ratio)]
     # The contrast ratio the cells actually saw in these windows. With a frozen seed the probe's
-    # sample variance differs between the high and the low dwells (4.51 against the nominal 4.68
-    # on fly_011), and that difference is not a gain change.
+    # sample variance differs between the high and the low dwells, and that difference is not a
+    # gain change.
     st0 = ctx["stims"][0]
     win = (st0["dwell"] >= first_dwell) & (st0["since"] >= window[0]) & (st0["since"] < window[1])
     cr = float(st0["c"][win & (st0["state"] > 0)].std() / st0["c"][win & (st0["state"] < 0)].std())
+    with np.errstate(invalid="ignore"):
+        noise_h = np.sqrt(np.maximum(np.nanmean(tot[:, hi] - lk[:, hi], 1), 0))
+        noise_l = np.sqrt(np.maximum(np.nanmean(tot[:, lo] - lk[:, lo], 1), 0))
     return dict(sd_high=float(sh), sd_low=float(sl), sd_ratio=float(r), sd_ratio_ci=bc.tolist(),
                 contrast_ratio=cr, contrast_ratio_nominal=ctx["contrast_ratio"],
                 gain_ratio=float(cr / r), gain_ratio_ci=[float(cr / bc[1]), float(cr / bc[0])],
-                noise_sd_high=float(np.sqrt(max(np.nanmean(tot[hi] - lk[hi]), 0))),
-                noise_sd_low=float(np.sqrt(max(np.nanmean(tot[lo] - lk[lo]), 0))), window=list(window),
-                bin_s=bin_s)
+                noise_sd_high=float(np.nanmedian(noise_h)), noise_sd_low=float(np.nanmedian(noise_l)),
+                n_roi=int(good.sum()), roi_sd_ratio=ratio.tolist(),
+                roi_sd_ratio_median=float(np.median(v)) if v.size else np.nan,
+                roi_sd_ratio_iqr=np.percentile(v, [25, 75]).tolist() if v.size else [np.nan, np.nan],
+                combine="per-ROI between-trial covariances averaged across ROIs, then sqrt; CI from resampling ROIs",
+                window=list(window), bin_s=bin_s)
 
 
 # ── switch-triggered averages ───────────────────────────────────────────────
@@ -818,31 +1106,39 @@ def _exp_tau(lag, m):
 
 
 def switch_triggered(ctx, ch, keep, bin_s=STA_BIN, first_dwell=2, n_boot=1000, seed=2):
-    """Pooled dF/F of the kept ROIs against time from each switch, by direction, one dwell
-    either side. Averaged over trials per dwell first, so the bootstrap unit is the dwell
-    (the noise realisation, when the seed is frozen)."""
+    """Each kept ROI's dF/F against time from each switch, by direction, one dwell either side:
+    averaged over trials, then over the ROI's switches. The population curve is the mean across
+    ROIs, with CIs from resampling ROIs; per-ROI steps are returned in the arrays."""
     rng = np.random.default_rng(seed)
     dwell_s = ctx["dwell_s"]
     curves, lag = _binned_by_dwell(ctx, ch, keep, bin_s, -dwell_s, dwell_s)
-    curves = np.nanmean(curves, axis=0)                                # (n_dwell, n_bin)
+    with np.errstate(invalid="ignore"):
+        C = np.nansum(curves, 1) / np.maximum(np.isfinite(curves).sum(1), 1)     # (n_roi, n_dwell, n_bin)
+        C[np.isfinite(curves).sum(1) == 0] = np.nan
     state_of = _state_of_dwells(ctx)
     out, arr = {}, dict(lag=lag)
     pre_w = (lag > -3.0) & (lag < 0)
     late = (lag >= 0.75 * dwell_s) & (lag < dwell_s)
+    n_roi = C.shape[0]
     for nm, sgn in (("to_high", 1), ("to_low", -1)):
         ks = np.array([k for k in range(first_dwell, ctx["n_dwell"]) if state_of[k] == sgn])
-        c = curves[ks]
-        m = np.nanmean(c, 0)
-        ix = rng.integers(0, ks.size, (n_boot, ks.size))
-        boot = np.nanmean(c[ix], 1)
+        with np.errstate(invalid="ignore"):
+            per_roi = np.nanmean(C[:, ks], 1)                                       # (n_roi, n_bin)
+            m = np.nanmean(per_roi, 0)
+            ix = rng.integers(0, n_roi, (n_boot, n_roi))
+            boot = np.nanmean(per_roi[ix], 1)
+            step_roi = per_roi[:, late].mean(1) - per_roi[:, pre_w].mean(1)
         step_b = boot[:, late].mean(1) - boot[:, pre_w].mean(1)
         taus = np.array([_exp_tau(lag, b) for b in boot[:200]])
-        out[nm] = dict(n_switch=int(ks.size), step=float(m[late].mean() - m[pre_w].mean()),
-                       step_ci=ci(step_b).tolist(), tau=_exp_tau(lag, m), tau_ci=ci(taus).tolist(),
-                       frac_tau_at_bound=float(np.mean(taus > 55)),
+        out[nm] = dict(n_switch=int(ks.size), n_roi=int(n_roi), step=float(m[late].mean() - m[pre_w].mean()),
+                       step_ci=ci(step_b).tolist(), step_roi_median=float(np.nanmedian(step_roi)),
+                       step_roi_iqr=np.nanpercentile(step_roi, [25, 75]).tolist(),
+                       tau=_exp_tau(lag, m), tau_ci=ci(taus).tolist(), frac_tau_at_bound=float(np.mean(taus > 55)),
                        level_pre=float(m[pre_w].mean()), level_late=float(m[late].mean()))
         arr[nm] = m
-        arr[nm + "_se"] = np.nanstd(c, 0, ddof=1) / np.sqrt(ks.size)
+        arr[nm + "_se"] = np.nanstd(per_roi, 0, ddof=1) / np.sqrt(n_roi)
+        arr[nm + "_roi"] = per_roi
+        arr[nm + "_roi_step"] = step_roi
     # peak change after the switch (0.5 s boxcar) from the last 1 s before it, half the
     # difference between the two directions
     n = max(1, int(round(0.5 / bin_s)))
@@ -855,6 +1151,7 @@ def switch_triggered(ctx, ch, keep, bin_s=STA_BIN, first_dwell=2, n_boot=1000, s
     out["peak_swing"] = dict(value=float(sw[after][i]), at=float(lag[after][i]))
     out["step_half_difference"] = 0.5 * (out["to_high"]["step"] - out["to_low"]["step"])
     return out, arr
+
 
 
 # ── synthetic ground truth ──────────────────────────────────────────────────
