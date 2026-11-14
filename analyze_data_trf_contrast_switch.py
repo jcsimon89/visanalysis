@@ -5,7 +5,7 @@ Contrast adaptation from the ContrastSwitchTernaryNoise protocol (labpack
 JCS_protocol): full-field ternary noise whose contrast alternates between a low
 and a high level at a fixed mean. Every block of the analysis lives in
 visanalysis/util/contrast_switch.py; read its module docstring for the timing
-convention, the pooled filter, and the Baccus & Meister normalisation.
+convention, the per-ROI analysis, and the Baccus & Meister normalisation.
 
 Call structure (same as the other analyze_data scripts):
     python analyze_data_trf_contrast_switch.py \
@@ -26,11 +26,13 @@ WHAT IT MEASURES, IN THE ORDER TO READ IT
 -----------------------------------------
 1. The gate: which ROIs have a high-contrast filter that beats the rolled
    null. Only these enter anything below.
-2. Held-out r of the pooled filter in each contrast against the same null. A
-   channel that fails has no filter and its gains mean nothing.
-3. Steady-state gain per contrast (Baccus & Meister: own filter, var(F*s) =
-   var(s)), the low/high ratio, and the slope over the generator range both
-   contrasts share. Compare the ratio with 1 (no adaptation) and with the
+2. Held-out r of each ROI's filter in each contrast against its own null, and
+   how many ROIs beat it. A channel whose median ROI fails has no filter and
+   its gains mean nothing.
+3. Steady-state gain per contrast for every ROI (Baccus & Meister: own filter,
+   var(F*s) = var(s)), the low/high ratio, and the slope over the generator
+   range both contrasts share; the population value is the median ROI with a CI
+   from resampling ROIs. Compare the ratio with 1 (no adaptation) and with the
    contrast ratio (complete adaptation).
 4. The model-free gain ratio from the frozen noise, which uses no filter. If it
    disagrees with (3), the model is missing something.
@@ -139,8 +141,12 @@ def _figure_main(res, arrs, title):
              'low/high (95% CI)  measured           vs non-adapting cell',
              '(own = each contrast filter, Baccus & Meister; hi filt = high filter in both)']
     sr = ca.get('static_reference')
+    lines.insert(1, 'per ROI, then median across ROIs (CI over ROIs); {} analysed'.format(
+        ca.get('n_roi_analysed', ca['n_roi'])))
+    lines.insert(2, 'filter beats its null: {} ROIs low, {} high, {} both'.format(
+        ca.get('n_roi_filter_low', '?'), ca.get('n_roi_filter_high', '?'), ca.get('n_roi_filter_both', '?')))
     if ca['has_filter_both_states'] is False:
-        lines.insert(1, '!! a filter fails its null: no ratio below is interpretable')
+        lines.insert(1, '!! the median ROI fails its null in a state: no ratio below is interpretable')
     for key, nm in (('gain', 'gain, own'), ('shared_range', 'shared, own'),
                     ('gain_high_filter', 'gain, hi filt'), ('shared_range_high_filter', 'shared, hi filt')):
         v = ca[key]
@@ -327,14 +333,14 @@ if __name__ == '__main__':
             sta, sa = cs.switch_triggered(ctx, nm, keep, first_dwell=args.first_dwell)
             res['switch_triggered'][nm] = sta
             arrs['sta_' + nm] = sa
-            if args.export_models == 'True':
-                from visanalysis.model import export as mexport
-                mp = mexport.contrast_switch_model(ctx, res, arrs, nm, efd, sn, library=args.model_library)
-                print('  {}: LN model exported to {}'.format(nm, mp))
             print('  {} switch: step to high {:+.4f} ({:+.4f}, {:+.4f}), to low {:+.4f}; tau to high {:.2f} s, '
                   'to low {:.2f} s; peak change {:.4f} at {:.1f} s'.format(
                       nm, sta['to_high']['step'], *sta['to_high']['step_ci'], sta['to_low']['step'],
                       sta['to_high']['tau'], sta['to_low']['tau'], sta['peak_swing']['value'], sta['peak_swing']['at']))
+            if args.export_models == 'True':
+                from visanalysis.model import export as mexport
+                mp = mexport.contrast_switch_model(ctx, res, arrs, nm, efd, sn, library=args.model_library)
+                print('  {}: LN model exported to {}'.format(nm, mp))
         pc = res['channels'][primary]
         res['model_free'] = cs.model_free_gain(ctx, primary, keep, window=(pc['steady_start'], ctx['dwell_s']),
                                                first_dwell=args.first_dwell)
