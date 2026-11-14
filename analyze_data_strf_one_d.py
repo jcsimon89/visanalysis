@@ -76,7 +76,7 @@ from visanalysis.util.one_d_stim import (
     load_one_d_cells, cell_positions_deg, cell_widths_deg, runt_cell_ids,
     pole_label, cell_offsets_deg, screen_axis_label, screen_center_coord,
     azel_from_pole_coords, direction_from_two_families, azel_of,
-    screen_azel_of,
+    screen_azel_of, pole_frame,
 )
 from visanalysis.util.one_d_strf import (
     one_layer, centroid_1d, compute_strf_cells, compute_strf_cells_folds,
@@ -154,12 +154,18 @@ def _geom_label(key):
 
     Readable prefix so a figure folder can be scanned by eye, plus a short
     digest of the whole key so two geometries cannot collide even where the
-    prefix formats them identically.
+    prefix formats them identically. hold_tau is in the prefix because the
+    protocol can sweep it trial by trial, and two families that differ only
+    in timescale should be tellable apart by name, not by digest. p stays in
+    the digest alone. The digest is over the whole key and did not change
+    when tau was added to the prefix, so a group an earlier run saved as
+    `bars_w5_ph0_az0_el0_<digest>` is the one now named
+    `bars_w5_ph0_az0_el0_tau0.45_<digest>`.
     """
-    mode, width, phase, pole_az, pole_el, _tau, _p = key
+    mode, width, phase, pole_az, pole_el, tau, _p = key
     digest = hashlib.sha1(repr(key).encode('utf-8')).hexdigest()[:6]
-    return '{}_w{:g}_ph{:g}_az{:g}_el{:g}_{}'.format(
-        mode, width, phase, pole_az, pole_el, digest)
+    return '{}_w{:g}_ph{:g}_az{:g}_el{:g}_tau{:g}_{}'.format(
+        mode, width, phase, pole_az, pole_el, tau, digest)
 
 
 class _Tee:
@@ -632,14 +638,23 @@ if __name__ == '__main__':
     if one_d_series_info:
         print('\nFound {} 1D ternary series:'.format(len(one_d_series_info)))
     for sn, info in one_d_series_info.items():
-        meta0 = info['epochs'][0][0]
         seeds = sorted({m[0]['seed'] for m in info['epochs']})
-        print('  {}: {} epochs  mode={}  cell_width={:.3g}deg  phase={:.3g}deg  '
-              'pole=(az {:.3g}, el {:.3g})  hold_tau={:.3g}s  p={:.5f}  n_cells={}  '
+
+        # Every field but the seed can be swept trial by trial -- the pole
+        # routinely is, and hold_tau can be -- so each is reported as the set of
+        # values the series actually showed. Reading them off the first epoch
+        # presented one trial's tau as the series' tau.
+        def _vals(field, fmt):
+            vs = sorted({float(m[0][field]) for m in info['epochs']})
+            return '/'.join(fmt.format(v) for v in vs)
+        modes = '/'.join(sorted({str(m[0]['mode']) for m in info['epochs']}))
+        print('  {}: {} epochs  mode={}  cell_width={}deg  phase={}deg  '
+              'pole=(az {}, el {})  hold_tau={}s  p={}  n_cells={}  '
               '{} distinct seed(s)'.format(
-                  sn, len(info['epochs']), meta0['mode'], meta0['cell_width_deg'],
-                  meta0['phase_deg'], meta0['pole_az_deg'], meta0['pole_el_deg'],
-                  meta0['hold_tau'], meta0['p'], meta0['n_cells'], len(seeds)))
+                  sn, len(info['epochs']), modes, _vals('cell_width_deg', '{:.3g}'),
+                  _vals('phase_deg', '{:.3g}'), _vals('pole_az_deg', '{:.3g}'),
+                  _vals('pole_el_deg', '{:.3g}'), _vals('hold_tau', '{:.3g}'),
+                  _vals('p', '{:.5f}'), _vals('n_cells', '{:g}'), len(seeds)))
 
     # ── STRFs ────────────────────────────────────────────────────────────────
 
@@ -1384,6 +1399,18 @@ if __name__ == '__main__':
         # filter peaks -- a biphasic kernel read at its peak lag can be mostly
         # negative -- so naming one is a coin flip that silently drops the
         # population when it lands wrong.
+        #
+        # Families are pooled per CONDITION (hold_tau, p), not per channel
+        # alone: a tau sweep gives two families about each pole, and one h(r)
+        # fit over all of them would be asked to explain two timescales at
+        # once. With a single condition the key is the bare channel name, so
+        # the hdf5 path and figure name are what they always were; with
+        # several it carries the tau.
+        _cond_of = {}
+        for (sn, ch, glabel), res in strf_results.items():
+            _cond_of[glabel] = (round(float(res['meta']['hold_tau']), 6),
+                                round(float(res['meta']['p']), 6))
+        _n_cond = len(set(_cond_of.values()))
         by_ch = {}
         for ch in sorted({k[1] for k in avg_results}):
             fams = {}
@@ -1394,7 +1421,9 @@ if __name__ == '__main__':
                 if best is None or out['n_roi'] > best[1]['n_roi']:
                     fams[glabel] = (glabel, out, gname)
             for glabel in sorted(fams):
-                by_ch.setdefault(ch, []).append(fams[glabel])
+                _tau = _cond_of[glabel][0]
+                _key = ch if _n_cond == 1 else '{}_tau{:g}'.format(ch, _tau)
+                by_ch.setdefault(_key, []).append(fams[glabel])
         for ch, fams in sorted(by_ch.items()):
             if len(fams) < 2:
                 print('  {}: radial symmetry needs two families, have {} -- '
@@ -1825,11 +1854,14 @@ if __name__ == '__main__':
         if _loc_ch is not None:
             print('  receptive-field map localised on {}'.format(_loc_ch))
 
-        # ANY two 1D families localise, not only bars+wedges about one pole.
-        # Each pins the direction to a curve; two curves meet in a point. Two
-        # WEDGE families about orthogonal poles -- what this rig runs when the
-        # pole is swept -- are two great-circle families and intersect just as
-        # well. See one_d_stim.direction_from_two_families.
+        # A map is made from two families of the SAME MODE about DIFFERENT
+        # poles, within ONE condition (hold_tau, p). Each family pins the
+        # direction to a curve and two curves meet in a point, so geometrically
+        # bars+wedges about one pole would localise too (see
+        # one_d_stim.direction_from_two_families) -- but the two modes probe
+        # the field with different cell shapes and are not combined here, by
+        # jcsimon's call (2026-11-13). What this rig runs is two WEDGE families
+        # about orthogonal poles, or two BARS families likewise.
         _fams = {}
         for (sn, ch, glabel), res in strf_results.items():
             if _loc_ch is not None and ch != _loc_ch:
@@ -1846,6 +1878,29 @@ if __name__ == '__main__':
                 for _j in range(_i + 1, len(fams)):
                     (sn_a, gl_a, res_a) = fams[_i]
                     (sn_e, gl_e, res_e) = fams[_j]
+                    # Same mode, same condition, different axis -- each test
+                    # names its reason, since a run that sweeps pole and tau
+                    # together produces every kind of rejected pair.
+                    _ma, _me = res_a['meta'], res_e['meta']
+                    if str(_ma['mode']) != str(_me['mode']):
+                        print('    skip {} x {}: bars and wedges are not '
+                              'combined into one map'.format(gl_a, gl_e))
+                        continue
+                    if (abs(float(_ma['hold_tau']) - float(_me['hold_tau'])) > 1e-6
+                            or abs(float(_ma['p']) - float(_me['p'])) > 1e-6):
+                        print('    skip {} x {}: different hold_tau / p, one '
+                              'map per condition'.format(gl_a, gl_e))
+                        continue
+                    # The same pole or its antipode gives parallel curves (two
+                    # bar rings, or two wedge fans meeting only at the pole):
+                    # direction_from_two_families returns NaN for every roi,
+                    # and the pair would print and save an empty map.
+                    _axis_dot = abs(float(np.dot(pole_frame(_ma)[0],
+                                                 pole_frame(_me)[0])))
+                    if _axis_dot > np.cos(np.radians(1.0)):
+                        print('    skip {} x {}: same axis, parallel families '
+                              'pin no point'.format(gl_a, gl_e))
+                        continue
                     # Both families', not just the second's. The center is
                     # what the plotted coordinates are relative to and what
                     # breaks the two-root ambiguity, so taking it from one
