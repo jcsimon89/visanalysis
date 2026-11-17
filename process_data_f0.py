@@ -38,6 +38,8 @@ if __name__ == '__main__':
     parser.add_argument("--experiment_file_directory", nargs="?", help="Folder pointing to hdf5")
     parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
     parser.add_argument("--run_gui", nargs="?", help="True/False")
+    parser.add_argument("--fano_regularizer", nargs="?", default=None,
+                        help="k in the GUI Fano image var / (mean + k), intensity units; omit for the GUI default")
     parser.add_argument("--attach_metadata", nargs="?", help="True/False")
     parser.add_argument("--show_figs", nargs="?", help="True/False")
     parser.add_argument("--save_figs", nargs="?", help="True/False")
@@ -173,7 +175,8 @@ if __name__ == '__main__':
                         + ' --experiment_file_path ' + experiment_file_path
                         + ' --rig ' + rig
                         + ' --series_number ' + str(current_series+1) # use first element of tuple to draw rois for current series
-                        + ' --image_file_path ' + image_file_path)
+                        + ' --image_file_path ' + image_file_path
+                        + ('' if args.fano_regularizer is None else ' --fano_regularizer ' + str(args.fano_regularizer)))
 
 
             ID = imaging_data.ImagingDataObject(experiment_file_path,

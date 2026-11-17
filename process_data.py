@@ -40,6 +40,8 @@ if __name__ == '__main__':
     parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
     parser.add_argument("--series_number", nargs="?", help="number as string for series to use for roi selection")
     parser.add_argument("--run_gui", nargs="?", help="True/False")
+    parser.add_argument("--fano_regularizer", nargs="?", default=None,
+                        help="k in the GUI Fano image var / (mean + k), intensity units; omit for the GUI default")
     parser.add_argument("--attach_metadata", nargs="?", help="True/False")
     parser.add_argument("--roi_set_name", nargs="?", default='roi_set_name', help="name of roi set for analysis")
     parser.add_argument("--response_set_name_prefix", nargs="?", default='mask', help="name of response set for analysis")
@@ -265,7 +267,8 @@ if __name__ == '__main__':
                 + ' --experiment_file_path ' + experiment_file_path
                 + ' --rig ' + rig
                 + ' --series_number ' + series_number
-                + ' --image_file_path ' + image_file_path)
+                + ' --image_file_path ' + image_file_path
+                + ('' if args.fano_regularizer is None else ' --fano_regularizer ' + str(args.fano_regularizer)))
 
 
     ID = imaging_data.ImagingDataObject(experiment_file_path,
