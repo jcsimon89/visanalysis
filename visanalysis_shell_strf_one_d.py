@@ -21,7 +21,7 @@ import os
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
 experiment_file_head = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/'
-experiment_file_tail = ['JS140_x_JS261/fly_023']
+experiment_file_tail = ['JS140_x_JS261/fly_022']
 
 
 # EVERY FLY THE STRF CELL RUNS. One entry is the single-fly behaviour; add paths

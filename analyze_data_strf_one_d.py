@@ -254,8 +254,8 @@ def pole_of(meta):
             round(float(meta['pole_el_deg']), 6))
 
 
-def load_saved_strfs(path, group, filter_length_spec, dff, deconvolve, lag_dt,
-                     null_method):
+def load_saved_strfs(path, group, filter_length_spec, filter_length_by_ch,
+                     dff, deconvolve, lag_dt, null_method):
     """Read back a previous run's STRFs, when they describe the SAME analysis.
 
     Re-running to refresh figures should not recompute every STA. But saved
@@ -274,16 +274,49 @@ def load_saved_strfs(path, group, filter_length_spec, dff, deconvolve, lag_dt,
         if group not in f:
             return {}, False, 'no saved /{} - computing'.format(group)
         g = f[group]
-        # Compared as the raw SPEC string, not a number: with per-channel
-        # lengths there is no single number to compare, and any edit to the
-        # spec is a different analysis. A file written before per-channel
-        # lengths has no such attr and so is correctly refused.
-        saved = (str(g.attrs.get('filter_length_spec', '<none>')),
+        # FILTER LENGTH: compared as the RESOLVED number per channel, with a
+        # tolerance, not as the spec string. The spelling is not the analysis:
+        # '10', '10.0' and 'ch1=10,ch2=10' are one filter length, and a string
+        # comparison refused to reuse across them -- which cost a full
+        # recompute, null test included, for nothing. What IS the analysis is
+        # the number each channel ran with, so that is what is stored (as a
+        # JSON dict, written below) and what is compared, for every channel
+        # this run wants. A file from before the dict existed falls back to
+        # the string, exactly as before, so nothing already saved is reused
+        # under settings that cannot be checked.
+        want_len = {str(k): float(v) for k, v in dict(filter_length_by_ch).items()}
+        saved_len_raw = g.attrs.get('filter_length_by_ch', None)
+        if saved_len_raw is not None:
+            try:
+                saved_len = {str(k): float(v) for k, v in json.loads(
+                    saved_len_raw.decode('utf-8') if isinstance(saved_len_raw, bytes)
+                    else str(saved_len_raw)).items()}
+            except (ValueError, AttributeError):
+                saved_len = None
+        else:
+            saved_len = None
+        if saved_len is not None:
+            _bad = {c: (saved_len.get(c), v) for c, v in want_len.items()
+                    if c not in saved_len
+                    or not np.isclose(saved_len[c], v, rtol=1e-9, atol=1e-9)}
+            if _bad:
+                return ({}, False,
+                        'saved /{} has filter_length {} per channel, this run '
+                        'wants {} - recomputing'.format(
+                            group,
+                            {c: saved_len.get(c) for c in sorted(want_len)},
+                            {c: want_len[c] for c in sorted(want_len)}))
+            len_ok = True
+            len_saved_desc = str({c: saved_len[c] for c in sorted(want_len)})
+        else:
+            len_ok = (str(g.attrs.get('filter_length_spec', '<none>'))
+                      == str(filter_length_spec))
+            len_saved_desc = str(g.attrs.get('filter_length_spec', '<none>'))
+        saved = (len_ok,
                  str(g.attrs.get('dff', '')),
                  bool(g.attrs.get('deconvolved', False)),
                  float(g.attrs.get('lag_dt', -1.0)))
-        want = (str(filter_length_spec), str(dff), bool(deconvolve),
-                float(lag_dt))
+        want = (True, str(dff), bool(deconvolve), float(lag_dt))
         # The kept set is part of what is saved, so the rule that made it is
         # part of the analysis identity. A file written before the attr
         # existed was selected by FDR (the only rule there was) and reads as
@@ -303,8 +336,8 @@ def load_saved_strfs(path, group, filter_length_spec, dff, deconvolve, lag_dt,
                     'saved /{} is filter_length={} dff={} deconvolved={} '
                     'lag_dt={:.5f}s, this run wants {} / {} / {} / {:.5f}s - '
                     'recomputing'.format(
-                        group, saved[0], saved[1], saved[2], saved[3],
-                        want[0], want[1], want[2], want[3]))
+                        group, len_saved_desc, saved[1], saved[2], saved[3],
+                        filter_length_spec, want[1], want[2], want[3]))
         out = {}
         try:
           for sn in g:
@@ -558,14 +591,6 @@ if __name__ == '__main__':
     print('reading ' + experiment_file_name)
 
     strf_group = 'STRF_ONE_D_' + tag
-    strf_results, reused = {}, False
-    if args.force_reanalysis:
-        print('--force_reanalysis: recomputing and overwriting /' + strf_group)
-    else:
-        strf_results, reused, _why = load_saved_strfs(
-            experiment_file_path, strf_group, filter_length_spec, dff,
-            args.deconvolve, float(args.lag_dt), null_method)
-        print(_why)
     if rig == 'Bruker':
         from visanalysis.plugin import bruker
         plug = bruker.BrukerPlugin()
@@ -600,6 +625,19 @@ if __name__ == '__main__':
     filter_length_by_ch = parse_per_channel(
         filter_length_spec, ['ch' + c for c in func_channels_num], 10.0,
         '--filter_length')
+
+    # Decided here rather than at the top, because the reuse check compares
+    # the filter length per channel and the channel list has only now been
+    # read from fly.json. Nothing between the top and here depends on it.
+    strf_results, reused = {}, False
+    if args.force_reanalysis:
+        print('--force_reanalysis: recomputing and overwriting /' + strf_group)
+    else:
+        strf_results, reused, _why = load_saved_strfs(
+            experiment_file_path, strf_group, filter_length_spec,
+            filter_length_by_ch, dff, args.deconvolve, float(args.lag_dt),
+            null_method)
+        print(_why)
 
     print('settings : filter_length={}  dff={}  deconvolve={}  '
           'null_shifts={}  null_method={}  bleach={}  rig={}'.format(
@@ -1119,6 +1157,10 @@ if __name__ == '__main__':
                 del f[strf_group]
             g = f.create_group(strf_group)
             g.attrs['filter_length_spec'] = filter_length_spec
+            # the numbers the reuse check actually compares; the spec above is
+            # kept for the log and for files read by older code
+            g.attrs['filter_length_by_ch'] = json.dumps(
+                {k: float(v) for k, v in sorted(filter_length_by_ch.items())})
             g.attrs['lag_dt'] = float(lag_dt_s)
             g.attrs['dff'] = dff
             g.attrs['deconvolved'] = bool(args.deconvolve)
