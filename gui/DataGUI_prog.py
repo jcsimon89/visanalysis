@@ -26,10 +26,11 @@ import numpy as np
 
 from visanalysis.util import plot_tools, h5io
 
-# Regularization constant k for the Fano image, var / (mean + k), in image intensity
-# units. Voxels with mean well below k are pulled toward zero. Where mean >> k the image
-# is the true Fano factor; as k grows past typical means it converges on the variance image.
-FANO_REGULARIZER = 300.0
+# Default regularization constant k for the Fano image, var / (mean + k), in image
+# intensity units; override with --fano_regularizer. Voxels with mean well below k are
+# pulled toward zero. Where mean >> k the image is the true Fano factor; as k grows past
+# typical means it converges on the variance image.
+DEFAULT_FANO_REGULARIZER = 300.0
 
 
 class DataGUI(QWidget):
@@ -44,6 +45,8 @@ class DataGUI(QWidget):
         parser.add_argument("--rig", nargs="?", help="Bruker or AODscope")
         parser.add_argument("--series_number", nargs="?", help="integer starting with 1")
         parser.add_argument("--image_file_path", nargs="?", help="full path to .nii image file to be used for roi selection")
+        parser.add_argument("--fano_regularizer", type=float, default=DEFAULT_FANO_REGULARIZER,
+                            help="k in the Fano image var / (mean + k), in image intensity units")
         args = parser.parse_args()
         experiment_file_directory = args.experiment_file_directory
         experiment_file_name = args.experiment_file_name
@@ -54,6 +57,8 @@ class DataGUI(QWidget):
         print('experiment_file_directory = ' + str(experiment_file_directory))
         print('experiment_file_name = ' + str(experiment_file_name))
         print('rig = ' + str(rig))
+        print('fano_regularizer = {:g}'.format(args.fano_regularizer))
+        self.fano_regularizer = args.fano_regularizer
         self.experiment_file_name = experiment_file_name #name of hdf5 file, previously without .hdf5 but i'm changing that
         self.experiment_file_directory = experiment_file_directory #path to folder that contains .hdf5 file
         self.experiment_file_path = experiment_file_path #complete path to .hdf5 file
@@ -75,6 +80,7 @@ class DataGUI(QWidget):
         self.roi_image = None
         self.fano_image = None
         self.show_fano_overlay = False
+        self.pixel_aspect = 1.0  # displayed height / width of one pixel; set from metadata once the data file is open
         self.roi_path_list = []
 
         self.blank_image = np.zeros((1, 1))
@@ -94,6 +100,7 @@ class DataGUI(QWidget):
         self.initUI()
 
         self.plugin.updateImagingDataObject(experiment_file_directory, experiment_file_name, series_number)
+        self.pixel_aspect = self.readPixelAspect()
 
         self.updateExistingRoiSetList()
         self.selectImageDataFile()
@@ -219,7 +226,7 @@ class DataGUI(QWidget):
         self.fano_canvas = FigureCanvas(self.fano_fig)
         self.fano_ax.set_aspect('equal')
         self.fano_ax.set_axis_off()
-        self.fano_ax.set_title('Fano factor, var / (mean + {:g})'.format(FANO_REGULARIZER), fontsize=8)
+        self.fano_ax.set_title('Fano factor, var / (mean + {:g})'.format(self.fano_regularizer), fontsize=8)
         self.fano_im = self.fano_ax.imshow(self.blank_image, cmap=self.fano_cmap)
         self.fano_cbar = self.fano_fig.colorbar(self.fano_im, ax=self.fano_ax, fraction=0.046, pad=0.04)
         self.plot_grid.addWidget(self.fano_canvas, 2, 1)
@@ -231,10 +238,13 @@ class DataGUI(QWidget):
         self.plot_grid.setColumnStretch(1, 1)
 
         # Toggle fano factor overlay on roi image (below the roi image, not the fano panel)
-        self.fanoOverlayButton = QPushButton("Show Fano Overlay", self)
+        self.fanoOverlayButton = QPushButton("Show Fano Overlay (T)", self)
         self.fanoOverlayButton.setCheckable(True)
         self.fanoOverlayButton.toggled.connect(self.toggleFanoOverlay)
         self.plot_grid.addWidget(self.fanoOverlayButton, 3, 0)
+        # T toggles the overlay from anywhere in the window; text boxes still receive a typed 't'
+        self.fanoOverlayShortcut = QtGui.QShortcut(QtGui.QKeySequence('T'), self)
+        self.fanoOverlayShortcut.activated.connect(self.fanoOverlayButton.toggle)
 
         # Contrast (min/max) sliders, one pair per canvas
         self.imgMinSlider, self.imgMaxSlider, img_contrast_grid = self._buildContrastSliders('Image', self.imgContrastChanged)
@@ -370,9 +380,10 @@ class DataGUI(QWidget):
             if len(self.roi_mask) > 0:
                 newImage = plot_tools.overlayImage(image_slice, self.roi_mask, 0.5, self.colors,
                                                    z=self.current_z_slice, vmin=self.img_vmin, vmax=self.img_vmax)
-                self.roi_ax.imshow(newImage)
+                self.roi_ax.imshow(newImage, aspect=self.pixel_aspect)
             else:
-                self.roi_ax.imshow(image_slice, cmap=cm.gray, vmin=self.img_vmin, vmax=self.img_vmax)
+                self.roi_ax.imshow(image_slice, cmap=cm.gray, vmin=self.img_vmin, vmax=self.img_vmax,
+                                   aspect=self.pixel_aspect)
             init_lasso = True
 
             if self.show_fano_overlay and self.fano_image is not None:
@@ -380,7 +391,8 @@ class DataGUI(QWidget):
                 # Re-point the persistent colorbar at a fresh overlay image rather than
                 # adding/removing a colorbar, which would resize roi_ax on every toggle.
                 overlay_im = self.roi_ax.imshow(fano_slice, cmap=self.fano_cmap, alpha=0.5,
-                                                vmin=self.fano_vmin, vmax=self.fano_vmax)
+                                                vmin=self.fano_vmin, vmax=self.fano_vmax,
+                                                aspect=self.pixel_aspect)
                 self.overlay_cbar.update_normal(overlay_im)
                 self.overlay_cbar.ax.set_visible(True)
             else:
@@ -418,6 +430,7 @@ class DataGUI(QWidget):
             self.fano_ax.set_xlim(-0.5, fano_slice.shape[1] - 0.5)
             self.fano_ax.set_ylim(fano_slice.shape[0] - 0.5, -0.5)
             self.fano_im.set_clim(vmin=self.fano_vmin, vmax=self.fano_vmax)
+            self.fano_ax.set_aspect(self.pixel_aspect)
         else:
             self.fano_im.set_data(self.blank_image)
         self.fano_canvas.draw()
@@ -429,6 +442,22 @@ class DataGUI(QWidget):
             drawn = np.any([mask[:, :, z_slice] for mask in self.roi_mask], axis=0)
             fano_slice[drawn] = np.nan
         return fano_slice
+
+    def readPixelAspect(self):
+        """Displayed height / width of one pixel, from the acquisition's pixel size.
+
+        Image rows run along the scan line (X axis, pixelsPerLine) and columns along Y
+        (linesPerFrame), so the aspect is microns per X pixel over microns per Y pixel.
+        Returns 1.0 (square pixels) if the metadata isn't available.
+        """
+        try:
+            metadata = self.plugin.ImagingDataObject.getAcquisitionMetadata()
+            aspect = float(metadata['micronsPerPixel_XAxis']) / float(metadata['micronsPerPixel_YAxis'])
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            print('Pixel size not found in acquisition metadata ({!r}); showing square pixels'.format(e))
+            return 1.0
+        print('Pixel aspect (X / Y microns per pixel) = {:.3f}'.format(aspect))
+        return aspect
 
     def toggleFanoOverlay(self, checked):
         self.show_fano_overlay = checked
@@ -640,7 +669,7 @@ class DataGUI(QWidget):
         self.redrawRoiTraces()
 
     def computeFanoImage(self):
-        """Regularized Fano factor, variance / (mean + FANO_REGULARIZER), at each pixel,
+        """Regularized Fano factor, variance / (mean + fano_regularizer), at each pixel,
         computed over the time axis of the raw series."""
         current_series = getattr(self.plugin, 'current_series', None)
         if current_series is None:
@@ -648,7 +677,7 @@ class DataGUI(QWidget):
         mean_image = np.mean(current_series, axis=3)
         var_image = np.var(current_series, axis=3)
         with np.errstate(divide='ignore', invalid='ignore'):
-            return np.where(mean_image > 0, var_image / (mean_image + FANO_REGULARIZER), np.nan)
+            return np.where(mean_image > 0, var_image / (mean_image + self.fano_regularizer), np.nan)
 
 
 if __name__ == '__main__':
