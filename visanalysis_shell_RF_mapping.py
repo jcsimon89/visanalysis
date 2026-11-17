@@ -56,6 +56,7 @@ response_set_name = 'mask' # name of response group to be analyzed (default 'mas
 # process_data
 series_number_for_roi_selection = '1' #string 
 run_gui = 'False' #string "True" or "False", default = "False"
+fano_regularizer = '300' #string, k in the GUI Fano image var / (mean + k), in image intensity units
 attach_metadata = 'True' #string "True" or "False", default = "False"
 
 # analyze_data
@@ -79,6 +80,7 @@ run_cmd('python ' + process_data_path
                 + ' --rig ' + rig
                 + ' --series_number ' + series_number_for_roi_selection
                 + ' --run_gui ' + run_gui
+                + ' --fano_regularizer ' + fano_regularizer
                 + ' --attach_metadata ' + attach_metadata
                 + ' --roi_set_name ' + roi_set_name
                 + ' --response_set_name_prefix ' + response_set_name)

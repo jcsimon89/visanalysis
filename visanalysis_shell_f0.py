@@ -62,6 +62,7 @@ rig = 'Bruker' #string "Bruker" or "AODscope"
 
 # process_data
 run_gui = 'True' #string "True" or "False", default = "False"
+fano_regularizer = '300' #string, k in the GUI Fano image var / (mean + k), in image intensity units
 attach_metadata = 'True' #string "True" or "False", default = "False"
 show_figs = 'False' #string "True" or "False", default = "False"
 save_figs = 'True' #string "True" or "False", default = "False"
@@ -84,6 +85,7 @@ run_cmd('python ' + process_data_path
                 + ' --experiment_file_directory ' + experiment_file_directory
                 + ' --rig ' + rig
                 + ' --run_gui ' + run_gui
+                + ' --fano_regularizer ' + fano_regularizer
                 + ' --attach_metadata ' + attach_metadata
                 + ' --show_figs ' + show_figs
                 + ' --save_figs ' + save_figs

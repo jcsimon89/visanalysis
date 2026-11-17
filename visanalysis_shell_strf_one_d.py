@@ -21,7 +21,7 @@ import os
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
 experiment_file_head = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/'
-experiment_file_tail = ['JS140_x_JS261/fly_020']
+experiment_file_tail = ['JS140_x_JS261/fly_023']
 
 
 # EVERY FLY THE STRF CELL RUNS. One entry is the single-fly behaviour; add paths
@@ -49,6 +49,7 @@ response_set_name = 'mask' # name of response group to be analyzed (default 'mas
 # process_data
 series_number_for_roi_selection = '1' #string, first series (search/flash stim) is used to identify rois
 run_gui = 'True' #string "True" or "False", default = "False"
+fano_regularizer = '300' #string, k in the GUI Fano image var / (mean + k), in image intensity units
 attach_metadata = 'True' #string "True" or "False", default = "False"
 flymax_movies_root = 'C:/Users/jcsimon/Documents/Stanford/Data/flymax_movies' #root dir to search for noise stimulus .bin/_params.json files
                                                                               #unused by the 1D stimulus, which has no movie file (it is
@@ -126,6 +127,7 @@ deconvolve = 'False' #string "True" or "False". OFF by default, and that is the 
 #                 + ' --rig ' + rig
 #                 + ' --series_number ' + series_number_for_roi_selection
 #                 + ' --run_gui ' + run_gui
+#                 + ' --fano_regularizer ' + fano_regularizer
 #                 + ' --attach_metadata ' + attach_metadata
 #                 + ' --roi_set_name ' + roi_set_name
 #                 + ' --response_set_name_prefix ' + response_set_name
