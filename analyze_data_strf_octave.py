@@ -106,9 +106,11 @@ if __name__ == '__main__':
                              "from a search stimulus), else fly.hdf5 -- so --tag "
                              "can be a plain label on flies that never had one.")
     parser.add_argument('--dff', nargs='?', default='pre')
-    parser.add_argument('--null_shifts', nargs='?', type=int, default=10,
+    parser.add_argument('--null_shifts', nargs='?', type=int, default=20,
                         help='circular-shift null draws; 0 disables. Costs (n+1)x '
-                             'the joint fit. See util.nullcal.')
+                             'the joint fit. 20 is the shared default of every noise '
+                             'analysis; see util.nullcal for why fewer starves FDR '
+                             'in sparse families.')
     parser.add_argument('--bleach', nargs='?', default='auto',
                         help="bleach correction on raw F: 'auto' (default), 'on', 'off'")
     parser.add_argument('--filter_length', nargs='?', type=float, default=10.0,

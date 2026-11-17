@@ -44,9 +44,14 @@ split it and report the groups rather than folding them together.
 """
 import numpy as np
 
-#: Default shift count. min_detectable_k ~= 1/(q*n_shifts), so 4 shifts at
-#: q=0.05 resolves any responsive set of >=5 ROIs. Costs 5x the filter compute.
-DEFAULT_SHIFTS = 4
+#: Default shift count, shared by every noise analysis (jcsimon, 2026-11-16).
+#: The pooled null has n_roi * n_shifts draws and p cannot go below
+#: 1/(n_null + 1), so with few shifts BH cannot start on a family with only a
+#: handful of responsive ROIs: at 10 shifts and 213 ROIs the floor is 0.00047
+#: and the first ROI would need p <= 0.00023. 20 halves the floor. Costs 21x
+#: the filter compute; past ~20 the shifts of a 10 s filter in a 10 min
+#: recording start to sample overlapping stretches and stop being independent.
+DEFAULT_SHIFTS = 20
 
 
 def peak_z(filt, noise_frac=0.3):
@@ -187,11 +192,23 @@ def select_rois(filt, cal, method='auto', q=0.05, noise_frac=0.3):
                                        cal.get('percentile', 95.0)),
                     reason='min_detectable_k={} > n_roi={}'.format(resolvable, m))
 
+    return keep, peak_signs(filt, keep, noise_frac), info
+
+
+def peak_signs(filt, keep, noise_frac=0.3):
+    """Sign of each kept ROI's filter at its own |z| extremum.
+
+    Split out of select_rois so a kept set decided on ANOTHER channel can be
+    given this channel's own polarities: the set says which cells responded,
+    the sign has to be read from the indicator actually being reported. Same
+    noise estimate as peak_z (the late lags), same rule as before.
+    """
     filt = np.asarray(filt)
     n_lags = filt.shape[-1]
     late = slice(int(round((1.0 - noise_frac) * n_lags)), n_lags)
+    keep = np.asarray(keep, dtype=int)
     signs = np.zeros(len(keep))
     for i, r in enumerate(keep):
         zz = filt[r] / np.nanstd(filt[r][..., late])
         signs[i] = np.sign(zz.ravel()[int(np.nanargmax(np.abs(zz)))])
-    return keep, signs, info
+    return signs

@@ -224,9 +224,11 @@ if __name__ == '__main__':
     parser.add_argument('--show_figs', nargs='?', default='False')
     parser.add_argument('--save_figs', nargs='?', default='False')
     parser.add_argument('--tag', nargs='?', default='raw')
-    parser.add_argument('--null_shifts', nargs='?', type=int, default=4,
+    parser.add_argument('--null_shifts', nargs='?', type=int, default=20,
                         help='circular-shift null draws per group; 0 disables. '
-                             'Costs (n+1)x the STRF computation. See util.nullcal.')
+                             'Costs (n+1)x the STRF computation. 20 is the shared '
+                             'default of every noise analysis; see util.nullcal '
+                             'for why fewer starves FDR in sparse families.')
     parser.add_argument('--bleach', nargs='?', default='auto',
                         help="bleach correction on raw F: 'auto' (default, applied when the "
                              "epoch is long enough), 'on', or 'off'. See util.bleach.")
