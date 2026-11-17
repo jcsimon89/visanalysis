@@ -1376,6 +1376,39 @@ class ImagingDataObject:
             )
 
 
+def roi_bool_masks(roi_mask, n_roi):
+    """One boolean (x, y, z) mask per ROI, in roi_response order.
+
+    Accepts the same two layouts roi_z_offsets does -- a single label volume,
+    or one mask per ROI -- and resolves them the same way, so an ROI's mask
+    here and its sampling offset there are guaranteed to be the same voxels.
+    A 2D mask comes back as (x, y, 1), so callers can loop over slices
+    without a special case.
+
+    Raises ValueError when the mask cannot be matched to n_roi ROIs.
+    """
+    def _vol(a):
+        a = np.asarray(a)
+        return a[:, :, np.newaxis] if a.ndim == 2 else a
+
+    if not isinstance(roi_mask, (list, tuple)):
+        m = np.asarray(roi_mask)
+        if m.ndim in (2, 3):
+            m = _vol(m)
+            labels = np.unique(m)
+            if np.count_nonzero(labels) == n_roi:
+                labels = labels[labels != 0]
+            elif len(labels) != n_roi:
+                raise ValueError('label volume has {} labels for {} ROIs'
+                                 .format(np.count_nonzero(labels), n_roi))
+            return [m == lab for lab in labels]
+
+    masks = list(roi_mask)
+    if len(masks) != n_roi:
+        raise ValueError('{} masks for {} ROIs'.format(len(masks), n_roi))
+    return [_vol(mk) != 0 for mk in masks]
+
+
 def roi_z_offsets(roi_mask, n_roi, frame_offsets):
     """Effective sampling-time offset of each ROI within a volume (sec).
 
