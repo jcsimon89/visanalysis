@@ -57,6 +57,24 @@ HOW THIS DIFFERS FROM analyze_data_strf_octave.py
   (`one_d_visible_cells`, from the real screen geometry at trial time), so
   this script uses that directly rather than re-deriving it from the patch
   size the way `octave_stim.visible_cells` has to.
+
+WHICH ROIS ARE KEPT
+-------------------
+The circular-shift null (util.nullcal) is run on ONE channel, by default the
+structural channel from fly.json -- the calcium indicator in this lab's
+convention -- and the kept set it produces is handed to every other channel
+of the same family. The other channels are not tested at all. The kept set
+answers "which cells responded to the stimulus", and that is read from the
+indicator that reports a response reliably; a slow or weak second indicator
+(cAMP) is then measured on exactly those cells instead of being asked to
+re-earn each one against its own noise. Each channel still reads its own
+polarity off its own filter.
+
+A family is a geometry AND a hold_tau (see _geom_key), so the null runs
+separately per tau and a tau-0.04 kept set never leaks into a tau-0.4 one:
+different taus are different experiments. --select_channel each restores the
+old rule, every channel tested on itself; the choice is recorded with the
+saved STRFs and a file selected the other way is recomputed, not reused.
 """
 
 import sys
@@ -254,8 +272,34 @@ def pole_of(meta):
             round(float(meta['pole_el_deg']), 6))
 
 
+def _full_meta_from_epochs(f, sn, saved_meta):
+    """The complete one_d_stimulus record of a saved family, read from the
+    epoch records of its series, for files whose family group predates the
+    `one_d_stimulus_json` attr. Matched on the geometry key, so a series that
+    swept tau or pole hands back the right record for each family. None when
+    no epoch matches."""
+    want = _geom_key(saved_meta)
+    series = 'series_{:03d}'.format(int(str(sn).replace('sn', '')))
+    subjects = f.get('Subjects')
+    if subjects is None:
+        return None
+    for sub in subjects:
+        runs = subjects[sub].get('epoch_runs')
+        if runs is None or series not in runs or 'epochs' not in runs[series]:
+            continue
+        for ek in runs[series]['epochs']:
+            attrs = dict(runs[series]['epochs'][ek].attrs)
+            try:
+                meta, _s = resolve_one_d_epoch_meta(attrs)
+            except (KeyError, ValueError):
+                continue
+            if _geom_key(meta) == want:
+                return meta
+    return None
+
+
 def load_saved_strfs(path, group, filter_length_spec, filter_length_by_ch,
-                     dff, deconvolve, lag_dt, null_method):
+                     dff, deconvolve, lag_dt, null_method, select_channel):
     """Read back a previous run's STRFs, when they describe the SAME analysis.
 
     Re-running to refresh figures should not recompute every STA. But saved
@@ -327,6 +371,17 @@ def load_saved_strfs(path, group, filter_length_spec, filter_length_by_ch,
             return ({}, False,
                     'saved /{} selected rois by {}, this run wants {} - '
                     'recomputing'.format(group, saved_null, null_method))
+        # Likewise WHICH CHANNEL the kept set was decided on. Before the attr
+        # existed every channel was tested on itself, so a file without it
+        # reads as 'each'; a run that inherits from the structural channel
+        # then recomputes rather than redrawing per-channel sets as inherited.
+        _ss = g.attrs.get('roi_selection_channel', 'each')
+        saved_sel = _ss.decode('utf-8') if isinstance(_ss, bytes) else str(_ss)
+        want_sel = 'each' if select_channel is None else str(select_channel)
+        if saved_sel != want_sel:
+            return ({}, False,
+                    'saved /{} decided kept rois on {}, this run wants {} - '
+                    'recomputing'.format(group, saved_sel, want_sel))
         # lag_dt compared with a tolerance, the rest exactly: it is a float a
         # user may retype rather than a label, and 1/60 written back and read
         # again should not count as a different analysis.
@@ -354,6 +409,26 @@ def load_saved_strfs(path, group, filter_length_spec, filter_length_by_ch,
                         meta['mode'] = (meta['mode'].decode('utf-8')
                                         if isinstance(meta['mode'], bytes)
                                         else str(meta['mode']))
+                    # The FULL record, not the eight labelling attrs: the
+                    # geometry helpers need the screen frame (frame_az_deg /
+                    # frame_el_deg) to place anything on a pitched screen.
+                    # From the attr written since 2026-11-17 when present;
+                    # otherwise from the series' own epoch records, which have
+                    # carried it all along; failing both, the KeyError below
+                    # sends the file to a recompute rather than a wrong map.
+                    _mj = sg.attrs.get('one_d_stimulus_json', None)
+                    if _mj is not None:
+                        _full = json.loads(_mj.decode('utf-8')
+                                           if isinstance(_mj, bytes) else str(_mj))
+                    else:
+                        _full = _full_meta_from_epochs(f, sn, meta)
+                        if _full is None:
+                            raise KeyError(
+                                'no one_d_stimulus_json on /{}/{}/{}/{} and no '
+                                'matching epoch record; cannot recover the '
+                                'screen frame'.format(group, sn, ch, gname))
+                    _full['mode'] = str(_full.get('mode', meta.get('mode', '')))
+                    meta = _full
                     res = {
                         'strf': sg['strf'][()], 'strf_z': sg['strf_z'][()],
                         't_lag': sg['t_lag'][()],
@@ -422,14 +497,16 @@ if __name__ == '__main__':
                              "from a search stimulus), else fly.hdf5 -- so --tag "
                              "can be a plain label on flies that never had one.")
     parser.add_argument('--dff', nargs='?', default='pre')
-    parser.add_argument('--null_shifts', nargs='?', type=int, default=10,
+    parser.add_argument('--null_shifts', nargs='?', type=int, default=20,
                         help='circular-shift null draws; 0 disables. Costs (n+1)x '
-                             'the STA computation. 10 rather than the 4 the octave '
-                             'twin uses: min_detectable_k is about 1/(q*n_shifts), so '
-                             '4 cannot resolve fewer than 5 responsive rois, which is '
-                             'a realistic number here. Past ~20 the shifts start '
-                             'sampling overlapping stretches of one recording, so the '
-                             'draws stop being independent. See util.nullcal.')
+                             'the STA computation. 20 is the shared default of every '
+                             'noise analysis: the p floor of the pooled null is '
+                             '1/(n_roi*n_shifts+1), and at 10 shifts BH could not '
+                             'start on a family with only a handful of responsive '
+                             'rois (fly_022 ch1 tau 0.04 kept 5 of ~10 real). Past '
+                             '~20 the shifts start sampling overlapping stretches of '
+                             'one recording, so the draws stop being independent. '
+                             'See util.nullcal.')
     parser.add_argument('--bleach', nargs='?', default='auto',
                         help="bleach correction on raw F: 'auto' (default), 'on', 'off'")
     parser.add_argument('--filter_length', nargs='?', default='10.0',
@@ -519,17 +596,34 @@ if __name__ == '__main__':
                              "map: 'structural' (default, read from fly.json), "
                              "'each' for one map per channel, or a channel "
                              "number such as '1'.")
-    parser.add_argument('--null_method', nargs='?', default='percentile',
-                        choices=['percentile', 'fdr', 'auto'],
+    parser.add_argument('--null_method', nargs='?', default='fdr',
+                        choices=['fdr', 'percentile', 'auto'],
                         help="how the circular-shift null becomes a kept set. "
-                             "'percentile' (default): an roi is kept when its peak z "
-                             "exceeds the 95th percentile of the pooled null, i.e. "
-                             "p < 0.05 per roi with NO multiple-comparison "
-                             "correction. 'fdr': Benjamini-Hochberg at q=0.05 over "
-                             "the rois. 'auto': fdr where the shift count can resolve "
-                             "it, percentile otherwise. The choice is recorded with "
-                             "the saved STRFs; a file selected by another rule is "
+                             "'fdr' (default): Benjamini-Hochberg at q=0.05 over the "
+                             "rois, i.e. about one in twenty KEPT rois may be noise. "
+                             "It is not a family-wise test: where there is signal it "
+                             "keeps most of what p<0.05 keeps (fly_022 ch1: 78 of 90), "
+                             "and where there is none it keeps nothing. Its one "
+                             "weakness is the p floor 1/(n_null+1) from few shifts, "
+                             "which costs real rois in a family with only a handful; "
+                             "raise --null_shifts there. 'percentile': peak z above "
+                             "the 95th percentile of the pooled null, p < 0.05 per roi "
+                             "with NO correction -- lets ~5%% of ALL rois through as "
+                             "noise, about 11 per 213-roi family, whether or not the "
+                             "family has signal. 'auto': fdr where the shift count can "
+                             "resolve it, percentile otherwise. The choice is recorded "
+                             "with the saved STRFs; a file selected by another rule is "
                              "recomputed, not reused.")
+    parser.add_argument('--select_channel', nargs='?', default='structural',
+                        help="which channel's null decides the kept rois for ALL "
+                             "channels of a family: 'structural' (default, read from "
+                             "fly.json; calcium by lab convention), a channel number "
+                             "such as '1', or 'each' to test every channel on itself "
+                             "(the old rule). Other channels run no null; they take "
+                             "the kept set and read their own polarity off their own "
+                             "filter. Families are per hold_tau, so each tau is "
+                             "selected on its own. Recorded with the saved STRFs; a "
+                             "file selected the other way is recomputed, not reused.")
     parser.add_argument('--force_reanalysis', action='store_true',
                         help='recompute even when this file already holds STRFs for '
                              'this tag, overwriting them. Without it a run that finds '
@@ -626,6 +720,26 @@ if __name__ == '__main__':
         filter_length_spec, ['ch' + c for c in func_channels_num], 10.0,
         '--filter_length')
 
+    # Which channel's null decides the kept set (None: each on itself). Needs
+    # fly.json for 'structural', so it too is resolved only here. A channel
+    # that is not functional is an error, not a fallback: a typo must not
+    # silently change what every other channel is measured on.
+    _sel = str(args.select_channel).lower()
+    if _sel == 'structural' and struct_channel_num is not None:
+        select_ch = 'ch' + str(struct_channel_num)
+    elif _sel in ('each', 'all'):
+        select_ch = None
+    elif _sel == 'structural':
+        select_ch = None
+        print('no structural channel in fly.json; every channel selects its '
+              'own rois (--select_channel each)')
+    else:
+        select_ch = _sel if _sel.startswith('ch') else 'ch' + _sel
+    if select_ch is not None and select_ch not in ['ch' + c for c in func_channels_num]:
+        print('--select_channel {}: not a functional channel of this fly ({})'
+              .format(args.select_channel, ['ch' + c for c in func_channels_num]))
+        sys.exit(1)
+
     # Decided here rather than at the top, because the reuse check compares
     # the filter length per channel and the channel list has only now been
     # read from fly.json. Nothing between the top and here depends on it.
@@ -636,13 +750,16 @@ if __name__ == '__main__':
         strf_results, reused, _why = load_saved_strfs(
             experiment_file_path, strf_group, filter_length_spec,
             filter_length_by_ch, dff, args.deconvolve, float(args.lag_dt),
-            null_method)
+            null_method, select_ch)
         print(_why)
 
     print('settings : filter_length={}  dff={}  deconvolve={}  '
-          'null_shifts={}  null_method={}  bleach={}  rig={}'.format(
+          'null_shifts={}  null_method={}  roi_selection={}  bleach={}  rig={}'.format(
               {k: '{:g}s'.format(v) for k, v in sorted(filter_length_by_ch.items())},
-              dff, args.deconvolve, null_shifts, null_method, args.bleach, rig))
+              dff, args.deconvolve, null_shifts, null_method,
+              ('each channel on itself' if select_ch is None
+               else 'on {}, inherited by the rest'.format(select_ch)),
+              args.bleach, rig))
     print('           lag_dt {:.5f}s ({:g} Hz)'.format(
         lag_dt_s, (1.0 / lag_dt_s) if lag_dt_s > 0 else float('nan')))
 
@@ -745,7 +862,10 @@ if __name__ == '__main__':
         print('  {}: {} dropped monitor frames (monitor_hz={})'.format(
             sn, len(drop_times_abs_s), frame_rate))
 
-        for current_channel in func_channels_num:
+        # The selection channel goes first, so its kept set already exists
+        # for each family when the other channels reach for it below.
+        _ch_order = sorted(func_channels_num, key=lambda c: 'ch' + c != select_ch)
+        for current_channel in _ch_order:
             ch = 'ch' + current_channel
             if (sn, ch) not in roi_data:
                 continue
@@ -918,7 +1038,33 @@ if __name__ == '__main__':
                 # before it, so a failure in between would leave the saved
                 # 'minority_fraction' reading a name that does not exist.
                 minority_frac = 0.0
-                if null_shifts > 0:
+                # Inherit, or test. Every channel but the selection channel
+                # takes the kept set that channel's null produced for THIS
+                # family (same geometry, same hold_tau) and runs no null of
+                # its own; its signs are still its own. See the module
+                # docstring, WHICH ROIS ARE KEPT.
+                _inherit_from = (select_ch if select_ch is not None and ch != select_ch
+                                 else None)
+                if null_shifts > 0 and _inherit_from is not None:
+                    _src = strf_results.get((sn, _inherit_from, glabel))
+                    null_select_info = {'method_used': 'inherited',
+                                        'from_channel': _inherit_from, 'n_roi': n_roi}
+                    if _src is None or _src.get('keep_rois') is None:
+                        null_select_info['warning'] = (
+                            'no kept set on {} for this family (its null did not '
+                            'run); nothing inherited'.format(_inherit_from))
+                        print('    ' + null_select_info['warning'])
+                    else:
+                        keep_rois = np.asarray(_src['keep_rois'], dtype=int)
+                        kept_signs = np.asarray(nullcal.peak_signs(
+                            strf_full[:, vis_mask, :], keep_rois), dtype=int)
+                        null_select_info['from_method'] = str(
+                            _src.get('null_select_info', {}).get('method_used', '?'))
+                        print('    kept {} of {} rois: the set {} selected for this '
+                              'family ({}); no null run on {}'.format(
+                                  len(keep_rois), n_roi, _inherit_from,
+                                  null_select_info['from_method'], ch))
+                elif null_shifts > 0:
                     _sdt = float(trials[0]['stim_dt'])
 
                     def _shifted(shift_s, _tr=trials, _sdt=_sdt, _nc=n_cells):
@@ -949,29 +1095,18 @@ if __name__ == '__main__':
                               'threshold {:.2f}'.format(
                                   null_shifts, time.perf_counter() - _t1, null_threshold))
 
-                        # Turn the null into an actual kept set. By default a
-                        # plain per-roi test: keep every roi whose peak z clears
-                        # the 95th percentile of the pooled null (p < 0.05), with
-                        # no correction over rois -- jcsimon's call (2026-11-16),
-                        # FDR at q=0.05 was discarding too much. --null_method fdr
-                        # is the corrected rule analyze_data_trf_fullfield.py uses.
+                        # Turn the null into an actual kept set. Default is FDR
+                        # at q=0.05, the rule analyze_data_trf_fullfield.py uses:
+                        # about one in twenty KEPT rois may be noise. It was
+                        # briefly replaced (2026-11-16) by the uncorrected
+                        # percentile on the belief that FDR was family-wise and
+                        # over-strict; on fly_022 it is not (78 of 90 kept where
+                        # there is signal, 0 where there is none), while the
+                        # percentile admitted ~11 noise rois per family, so it
+                        # went back the same day. See --null_method.
                         keep_rois, kept_signs, null_select_info = nullcal.select_rois(
                             _vis_strf, _cal, method=null_method)
                         kept_signs = np.asarray(kept_signs, dtype=int)
-                        # Checked, never used to flip traces before averaging:
-                        # aligning each ROI to its own peak makes noise add
-                        # constructively there, so the mean grows a peak even when
-                        # nothing carries signal. See util.nullcal.
-                        #
-                        # The MINORITY FRACTION, not 'are both signs present'. A
-                        # population with two dissenters out of 243 is uniform for
-                        # every practical purpose, and a warning that fires on it
-                        # is one an operator learns to ignore.
-                        _npos = int((kept_signs > 0).sum())
-                        _nneg = int((kept_signs < 0).sum())
-                        minority_frac = (min(_npos, _nneg) / float(len(kept_signs))
-                                         if len(kept_signs) else 0.0)
-                        mixed_polarity = bool(minority_frac > 0.1)
                         _how_used = null_select_info.get('method_used', '?')
                         print('    kept {} of {} rois by {}'.format(
                             len(keep_rois), n_roi,
@@ -979,16 +1114,34 @@ if __name__ == '__main__':
                              'uncorrected' if _how_used == 'percentile'
                              else 'FDR (q=0.05)' if _how_used == 'fdr'
                              else _how_used)))
-                        print('        polarity: {} positive, {} negative '
-                              '({:.1%} minority)'.format(
-                                  _npos, _nneg, minority_frac))
-                        if mixed_polarity:
-                            print('        NOTE: genuinely MIXED in polarity; '
-                                  'split them rather than averaging together.')
                         if 'warning' in null_select_info:
                             print('        {}'.format(null_select_info['warning']))
                     except ValueError as e:
                         print('    null calibration skipped: {}'.format(e))
+
+                if kept_signs is not None:
+                    # Checked, never used to flip traces before averaging:
+                    # aligning each ROI to its own peak makes noise add
+                    # constructively there, so the mean grows a peak even when
+                    # nothing carries signal. See util.nullcal.
+                    #
+                    # The MINORITY FRACTION, not 'are both signs present'. A
+                    # population with two dissenters out of 243 is uniform for
+                    # every practical purpose, and a warning that fires on it
+                    # is one an operator learns to ignore. On an inherited set
+                    # these are THIS channel's signs over the other channel's
+                    # cells, which is exactly the comparison wanted.
+                    _npos = int((kept_signs > 0).sum())
+                    _nneg = int((kept_signs < 0).sum())
+                    minority_frac = (min(_npos, _nneg) / float(len(kept_signs))
+                                     if len(kept_signs) else 0.0)
+                    mixed_polarity = bool(minority_frac > 0.1)
+                    print('        polarity: {} positive, {} negative '
+                          '({:.1%} minority)'.format(
+                              _npos, _nneg, minority_frac))
+                    if mixed_polarity:
+                        print('        NOTE: genuinely MIXED in polarity; '
+                              'split them rather than averaging together.')
 
                 dof = independent_samples(n_valid, float(meta['hold_tau']), sample_dt)
                 n_indep = float(np.median(dof))
@@ -1165,6 +1318,8 @@ if __name__ == '__main__':
             g.attrs['dff'] = dff
             g.attrs['deconvolved'] = bool(args.deconvolve)
             g.attrs['null_method'] = null_method
+            g.attrs['roi_selection_channel'] = ('each' if select_ch is None
+                                                else select_ch)
 
             for (sn, ch, glabel), res in strf_results.items():
                 sg = g.require_group('{}/{}/geom_{}'.format(sn, ch, glabel))
@@ -1206,6 +1361,18 @@ if __name__ == '__main__':
                 for k in ('mode', 'cell_width_deg', 'phase_deg', 'pole_az_deg',
                          'pole_el_deg', 'hold_tau', 'p', 'seed'):
                     sg.attrs[k] = meta[k]
+                # The WHOLE stimulus record as well. The eight attrs above are
+                # what the figures label things by, but the geometry helpers
+                # read more -- in particular frame_az_deg / frame_el_deg, the
+                # screen's pitch, which pole_frame uses to turn a recorded pole
+                # into a fly-frame direction. A reuse run that rebuilt meta
+                # from the eight attrs alone had no frame and silently drew
+                # the rf-centre map with the screen taken as level: on this
+                # rig that is 38 degrees of pitch, and the map was wrong in
+                # every reuse run while right in every fresh one.
+                sg.attrs['one_d_stimulus_json'] = json.dumps(
+                    {k: (v.tolist() if isinstance(v, np.ndarray) else v)
+                     for k, v in dict(meta).items()}, default=float)
                 sg.attrs['filter_length_s'] = res['filter_length_s']
                 sg.attrs['median_noise_sd'] = res['z_info']['median_sd']
                 # Which pool the sd came from; the two are not comparable.
@@ -1221,7 +1388,12 @@ if __name__ == '__main__':
                                       data=np.asarray(res['kept_signs'], dtype=int))
                     sg.attrs['kept_mixed_polarity'] = res['mixed_polarity']
                     sg.attrs['kept_minority_fraction'] = res['minority_fraction']
-                    sg.attrs['selection_basis'] = 'visible cells only'
+                    sg.attrs['selection_basis'] = (
+                        'visible cells only; kept set inherited from {}, no null '
+                        'run on this channel'.format(
+                            res['null_select_info']['from_channel'])
+                        if res['null_select_info'].get('method_used') == 'inherited'
+                        else 'visible cells only')
                     # 'null_select_', not 'null_': select_rois reports its own
                     # 'threshold' (the weakest ROI it kept), which under a shared
                     # prefix would silently overwrite the null threshold above.
@@ -1629,6 +1801,21 @@ if __name__ == '__main__':
                         response_set_name_prefix + ch, roi_prefix='aligned')
                 _masks_cache[(sn, ch)] = (_rd['roi_mask'], _rd['roi_image'])
             return _masks_cache[(sn, ch)]
+
+        _slice_cache = {}
+
+        def _roi_slices(sn, ch, n_roi):
+            """The slice each roi mostly lives in (most voxels), or None."""
+            if (sn, ch) not in _slice_cache:
+                try:
+                    _raw, _img = _roi_masks(sn, ch)
+                    _b = roi_bool_masks(_raw, n_roi)
+                    _slice_cache[(sn, ch)] = np.array(
+                        [int(np.argmax(m.sum(axis=(0, 1)))) for m in _b])
+                except (KeyError, AssertionError, ValueError) as _e:
+                    print('  {} {}: roi slices unavailable ({})'.format(sn, ch, _e))
+                    _slice_cache[(sn, ch)] = None
+            return _slice_cache[(sn, ch)]
 
         for (sn, ch, glabel), res in sorted(strf_results.items()):
             _keep = res.get('keep_rois')
@@ -2230,6 +2417,79 @@ if __name__ == '__main__':
                                 ch, gl_a, gl_e)))
                     if not show_figs:
                         plt.close(fig)
+
+                    # ── the same centres, BY SLICE ─────────────────────────
+                    # Which imaging plane each roi lives in, against where its
+                    # receptive field sits. A retinotopic layer should show the
+                    # planes as ordered bands across the map; a cloud with the
+                    # planes mixed through it says the stack cuts across the
+                    # retinotopy, or that the centres are noise. One panel
+                    # with every slice coloured, then one per slice with the
+                    # others greyed, since ten colours on one axis are hard to
+                    # read apart. Minority-sign rois keep a red edge so the
+                    # two figures can be read against each other.
+                    _zs = _roi_slices(sn_a, ch, len(az_c))
+                    if _zs is not None and len(ok):
+                        _zok = _zs[ok]
+                        _planes = sorted(set(int(z) for z in _zok))
+                        _cmap = plt.get_cmap('viridis', max(len(_planes), 2))
+                        _zcol = {z: _cmap(i) for i, z in enumerate(_planes)}
+                        _edge = np.array(['#d62728' if _cat[int(r)] == 'minority'
+                                          else 'k' for r in ok])
+                        _n_pan = 1 + len(_planes)
+                        _ncol = min(_n_pan, 4)
+                        _nrow = int(np.ceil(_n_pan / float(_ncol)))
+                        fig, axes = plt.subplots(
+                            _nrow, _ncol, squeeze=False,
+                            figsize=(4.6 * _ncol, 4.3 * _nrow + 1.2),
+                            constrained_layout=True)
+                        _xl = (float(np.nanmin(az_c[ok])) - 5, float(np.nanmax(az_c[ok])) + 5)
+                        _yl = (float(np.nanmin(el_c[ok])) - 5, float(np.nanmax(el_c[ok])) + 5)
+                        for _pi in range(_nrow * _ncol):
+                            ax = axes[_pi // _ncol, _pi % _ncol]
+                            if _pi >= _n_pan:
+                                ax.set_axis_off()
+                                continue
+                            ax.axhline(0, color='0.6', lw=0.8, ls=':')
+                            ax.axvline(0, color='0.6', lw=0.8, ls=':')
+                            ax.plot(0, 0, 'k+', ms=10, mew=1.4, zorder=4)
+                            if _pi == 0:
+                                for z in _planes:
+                                    _m = _zok == z
+                                    ax.scatter(az_c[ok][_m], el_c[ok][_m], s=40,
+                                               color=_zcol[z], edgecolors=_edge[_m],
+                                               linewidths=0.7, zorder=3,
+                                               label='slice {} (n={})'.format(
+                                                   z, int(_m.sum())))
+                                ax.legend(fontsize=9, loc='best', ncol=2)
+                                ax.set_title('all slices', fontsize=12)
+                            else:
+                                z = _planes[_pi - 1]
+                                _m = _zok == z
+                                ax.scatter(az_c[ok][~_m], el_c[ok][~_m], s=22,
+                                           color='0.82', edgecolors='none', zorder=2)
+                                ax.scatter(az_c[ok][_m], el_c[ok][_m], s=44,
+                                           color=_zcol[z], edgecolors=_edge[_m],
+                                           linewidths=0.7, zorder=3)
+                                ax.set_title('slice {}  (n={})'.format(
+                                    z, int(_m.sum())), fontsize=12)
+                            ax.set_xlim(*_xl)
+                            ax.set_ylim(*_yl)
+                            ax.set_aspect('equal', adjustable='datalim')
+                            ax.set_xlabel('Azimuth re. patch center (deg)', fontsize=9)
+                            ax.set_ylabel('Elevation re. patch center (deg)', fontsize=9)
+                        fig.suptitle('receptive-field centers by slice  {}  ({})\n'
+                                     '{} {}  x  {} {}\n'
+                                     'colour: imaging slice; red edge: minority sign'
+                                     .format(ch, how, sn_a, gl_a, sn_e, gl_e),
+                                     fontsize=12)
+                        if save_figs:
+                            fig.savefig(os.path.join(
+                                figs_dir,
+                                'strf_one_d_rf_centers_by_slice_{}_{}_{}.pdf'.format(
+                                    ch, gl_a, gl_e)))
+                        if not show_figs:
+                            plt.close(fig)
 
         # ── the registered mean: the answer to "what does this filter look like" ──
         # COMMON AXES PER CHANNEL. Each geometry's registered grid ends where
