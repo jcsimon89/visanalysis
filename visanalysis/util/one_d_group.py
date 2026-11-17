@@ -78,7 +78,7 @@ def auto_grid_step(cell_width_deg, rel_deg, target_per_bin=8, max_subdiv=4):
 
 def register_average(filters, positions_deg, centers_deg, cell_width_deg,
                      mode='bars', grid_step=None, min_roi_per_bin=3,
-                     half_width_deg=None):
+                     half_width_deg=None, cell_widths_deg=None):
     """Shift each ROI's filter onto its own RF center and average.
 
     filters      : (n_roi, n_cells, n_lags), already z-scored per ROI
@@ -89,19 +89,50 @@ def register_average(filters, positions_deg, centers_deg, cell_width_deg,
                    not -- beta runs pole to antipole and a difference of two
                    positions is already signed and bounded
     grid_step    : bin width; None asks auto_grid_step
-    min_roi_per_bin : bins with fewer contributing ROIs are returned as NaN.
-                   A mean over two ROIs is not a population mean, and leaving
-                   it in makes the tails of the figure look like measurements.
-    half_width_deg : half extent of the grid; None uses the widest registered
-                   sample actually present
+    min_roi_per_bin : bins with less contributing weight than this are returned
+                   as NaN. A mean over two ROIs is not a population mean, and
+                   leaving it in makes the tails of the figure look like
+                   measurements.
+    half_width_deg : half extent of the grid; None covers the widest registered
+                   cell actually present, edge to edge
+    cell_widths_deg : (n_cells,) each cell's own extent, from
+                   one_d_stim.cell_widths_deg. None means every cell is
+                   `cell_width_deg` wide. Worth passing for wedges, whose seam
+                   cell can be a partial one.
 
-    Returns dict with 'grid_deg', 'mean', 'sem', 'n_roi_per_bin', 'n_roi',
-    'grid_step_deg'.
+    EACH CELL IS SPREAD OVER ITS WHOLE WIDTH, not dropped into the one bin that
+    holds its centre. A ROI's filter is piecewise constant in space -- the
+    weight at any position is the weight of the cell containing it -- so the
+    registered filter is that step function shifted onto the ROI's centre, and
+    every bin a cell covers receives the cell's value, weighted by the fraction
+    of the bin the cell overlaps. The alternative, binning centres as points,
+    filled only every fourth 2.5 degree bin per ROI, so neighbouring bins were
+    averages over DIFFERENT ROI subsets and the mean zigzagged at a resolution
+    the 10 degree cells cannot support (measured: 8.3 at -2.5 deg next to 4.3
+    at 0 on fly_022). Here every ROI contributes to every bin near its centre.
+
+    What this estimates: with ROI centres scattered uniformly relative to the
+    cell grid, the expectation of the spread mean at offset x is the strip
+    profile S(x) -- the field integrated over a cell-wide strip -- smoothed by
+    one more cell-wide box. The radial fit's forward model takes that box into
+    account (projection_matrix, smooth_width_deg); anyone reading a width off
+    the mean directly should remember the extra w^2/12 of variance.
+
+    Returns dict with 'grid_deg', 'mean', 'sem', 'n_roi_per_bin' (the summed
+    overlap weight, which is the number of ROIs covering the bin), 'n_roi',
+    'grid_step_deg', 'spread' (True).
     """
     filters = np.asarray(filters, dtype=float)
     n_roi, n_cells, n_lags = filters.shape
     positions_deg = np.asarray(positions_deg, dtype=float)
     centers_deg = np.asarray(centers_deg, dtype=float)
+    if cell_widths_deg is None:
+        widths = np.full(n_cells, float(cell_width_deg))
+    else:
+        widths = np.asarray(cell_widths_deg, dtype=float)
+        if widths.shape != (n_cells,):
+            raise ValueError('cell_widths_deg has shape {}, expected ({},)'
+                             .format(widths.shape, n_cells))
 
     rel = positions_deg[None, :] - centers_deg[:, None]      # (n_roi, n_cells)
     if str(mode) == 'wedges':
@@ -114,22 +145,30 @@ def register_average(filters, positions_deg, centers_deg, cell_width_deg,
     step = (auto_grid_step(cell_width_deg, rel[ok_roi])
             if grid_step is None else float(grid_step))
     if half_width_deg is None:
-        half_width_deg = float(np.nanmax(np.abs(rel[ok_roi]))) + 0.5 * step
+        half_width_deg = (float(np.nanmax(np.abs(rel[ok_roi]) + widths[None, :] / 2.0))
+                          + 0.5 * step)
     n_half = int(np.ceil(half_width_deg / step))
     grid = np.arange(-n_half, n_half + 1) * step
+    edge_lo = grid - step / 2.0
+    edge_hi = grid + step / 2.0
 
     total = np.zeros((grid.size, n_lags))
     total_sq = np.zeros((grid.size, n_lags))
     count = np.zeros((grid.size, n_lags))
 
     for r in np.flatnonzero(ok_roi):
-        idx = np.round(rel[r] / step).astype(int) + n_half
-        keep = (idx >= 0) & (idx < grid.size)
-        f = filters[r][keep]
+        a = rel[r] - widths / 2.0                              # (n_cells,)
+        b = rel[r] + widths / 2.0
+        # overlap of each cell with each bin, as a fraction of the bin
+        ov = (np.minimum(b[:, None], edge_hi[None, :])
+              - np.maximum(a[:, None], edge_lo[None, :]))      # (n_cells, n_bins)
+        W = np.clip(ov, 0.0, step) / step
+        f = filters[r]
         good = np.isfinite(f)
-        np.add.at(total, idx[keep], np.where(good, f, 0.0))
-        np.add.at(total_sq, idx[keep], np.where(good, f * f, 0.0))
-        np.add.at(count, idx[keep], good.astype(float))
+        fz = np.where(good, f, 0.0)
+        total += W.T @ fz
+        total_sq += W.T @ (fz * fz)
+        count += W.T @ good.astype(float)
 
     with np.errstate(invalid='ignore', divide='ignore'):
         mean = total / count
@@ -140,7 +179,7 @@ def register_average(filters, positions_deg, centers_deg, cell_width_deg,
     sem[thin] = np.nan
     return dict(grid_deg=grid, mean=mean, sem=sem,
                 n_roi_per_bin=count, n_roi=int(ok_roi.sum()),
-                grid_step_deg=step)
+                grid_step_deg=step, spread=True)
 
 
 def polarity_groups(signs, minority_tol=0.1):
@@ -173,18 +212,38 @@ def polarity_groups(signs, minority_tol=0.1):
     return out, minor
 
 
-def coverage_bounds(count, frac_of_max=0.5):
-    """Grid indices whose ROI count is at least `frac_of_max` of the best bin.
+def coverage_bounds(count, frac_of_center=0.2, grid_deg=None):
+    """A CONTIGUOUS run of grid indices with at least `frac_of_center` as
+    many contributing ROIs as the centre bin.
 
     The registered grid always tapers at its edges -- only the ROIs whose
     receptive field sat near the edge of the lit region contribute out there --
     so the tails are averages over a handful of unusual ROIs. Cropping to where
     the population actually is keeps the figure honest about what it shows.
+
+    Contiguous on purpose: the run goes from the first bin that passes to the
+    last, including any thinner bin between them. An earlier version returned
+    every passing index, which had holes wherever the count dipped -- and the
+    heat map, drawn with imshow over a uniform extent, silently closed those
+    holes, so every row above a gap was painted too low. On fly_022 the peak at
+    -2.5 deg was drawn at -18.5. The marginal, plotted against the real grid,
+    disagreed with the heat map in the same figure.
+
+    Relative to the CENTRE bin (offset 0, each ROI's own RF centre), which
+    every ROI covers, rather than to the best bin. `grid_deg` locates it; when
+    omitted the middle row is taken, which is where register_average puts 0.
+    Falls back to the best bin if the centre is empty.
     """
     per_bin = np.nanmax(np.asarray(count, dtype=float), axis=1)
     if not np.any(per_bin > 0):
         return np.array([], dtype=int)
-    return np.flatnonzero(per_bin >= frac_of_max * per_bin.max())
+    if grid_deg is not None:
+        c = int(np.argmin(np.abs(np.asarray(grid_deg, dtype=float))))
+    else:
+        c = per_bin.size // 2
+    ref = per_bin[c] if per_bin[c] > 0 else per_bin.max()
+    passing = np.flatnonzero(per_bin >= float(frac_of_center) * ref)
+    return np.arange(passing[0], passing[-1] + 1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -256,27 +315,46 @@ def _disc_strip_area(radius, a, b):
     return g(np.asarray(b, dtype=float)) - g(np.asarray(a, dtype=float))
 
 
-def projection_matrix(strip_centers_deg, strip_width_deg, r_edges_deg):
+def projection_matrix(strip_centers_deg, strip_width_deg, r_edges_deg,
+                      smooth_width_deg=None, n_sub=16):
     """(n_strips, n_annuli) area of overlap between each strip and each annulus.
 
     This IS the forward model: a radially symmetric field that is h_j on
     annulus j projects to A @ h. Rows are the registered grid bins, columns the
     radial bins.
+
+    smooth_width_deg : when the profile being fitted is a register_average
+        mean, each cell was spread over its width, and in expectation the
+        profile is the strip integral smoothed by a box this wide (see
+        register_average). The row for a grid point is then the average of
+        strip rows over centres within +-smooth/2 of it -- a strip with a
+        triangular cross-section rather than a flat one -- computed as the
+        mean over `n_sub` evenly spaced sub-offsets. Fitting the unsmoothed
+        model to a smoothed profile would return an h(r) one box too wide.
     """
     c = np.asarray(strip_centers_deg, dtype=float)
-    a, b = c - float(strip_width_deg) / 2.0, c + float(strip_width_deg) / 2.0
     edges = np.asarray(r_edges_deg, dtype=float)
-    A = np.zeros((c.size, edges.size - 1))
-    prev = _disc_strip_area(edges[0], a, b)
-    for j in range(1, edges.size):
-        cur = _disc_strip_area(edges[j], a, b)
-        A[:, j - 1] = cur - prev
-        prev = cur
-    return A
+
+    def rows(centres):
+        a = centres - float(strip_width_deg) / 2.0
+        b = centres + float(strip_width_deg) / 2.0
+        A = np.zeros((centres.size, edges.size - 1))
+        prev = _disc_strip_area(edges[0], a, b)
+        for j in range(1, edges.size):
+            cur = _disc_strip_area(edges[j], a, b)
+            A[:, j - 1] = cur - prev
+            prev = cur
+        return A
+
+    if not smooth_width_deg:
+        return rows(c)
+    w = float(smooth_width_deg)
+    offsets = (np.arange(int(n_sub)) + 0.5) / float(n_sub) * w - w / 2.0
+    return np.mean([rows(c + u) for u in offsets], axis=0)
 
 
 def radial_from_projection(profile, strip_centers_deg, strip_width_deg,
-                           r_edges_deg=None, ridge=1e-2):
+                           r_edges_deg=None, ridge=1e-2, smooth_width_deg=None):
     """Radial profile h(r) behind a registered projection.
 
     profile : (n_bins,) or (n_bins, n_lags); NaN bins are dropped, which is how
@@ -308,7 +386,8 @@ def radial_from_projection(profile, strip_centers_deg, strip_width_deg,
         r_edges_deg = np.arange(0.0, r_max + step, step)
     r_edges_deg = np.asarray(r_edges_deg, dtype=float)
 
-    A_full = projection_matrix(c, strip_width_deg, r_edges_deg)
+    A_full = projection_matrix(c, strip_width_deg, r_edges_deg,
+                               smooth_width_deg=smooth_width_deg)
     n_r = A_full.shape[1]
     D2 = np.diff(np.eye(n_r), 2, axis=0) if n_r > 2 else np.eye(n_r)
 
@@ -358,7 +437,7 @@ def radial_to_image(r_centers_deg, h, extent_deg=None, n_pix=101):
 
 def radial_from_projections(profiles, strip_centers, strip_width_deg,
                             r_edges_deg=None, ridge=1e-2, fit_gain=True,
-                            n_gain_iter=6):
+                            n_gain_iter=6, smooth_width_deg=None):
     """One radial profile h(r) constrained by SEVERAL families at once.
 
     Under radial symmetry every family measures the same h, so they are not
@@ -389,7 +468,8 @@ def radial_from_projections(profiles, strip_centers, strip_width_deg,
         r_edges_deg = np.arange(0.0, r_max + step, step)
     r_edges_deg = np.asarray(r_edges_deg, dtype=float)
 
-    mats = [projection_matrix(g, strip_width_deg, r_edges_deg) for g in grids]
+    mats = [projection_matrix(g, strip_width_deg, r_edges_deg,
+                              smooth_width_deg=smooth_width_deg) for g in grids]
     n_r = mats[0].shape[1]
     D2 = np.diff(np.eye(n_r), 2, axis=0) if n_r > 2 else np.eye(n_r)
     DtD = D2.T @ D2
