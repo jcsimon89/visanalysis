@@ -71,6 +71,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from visanalysis.plugin import base as base_plugin
 from visanalysis.analysis import imaging_data
+from visanalysis.analysis.imaging_data import roi_bool_masks
 from visanalysis.util.one_d_stim import (
     is_one_d_ternary, resolve_one_d_epoch_meta, epoch_visible_cells,
     load_one_d_cells, cell_positions_deg, cell_widths_deg, runt_cell_ids,
@@ -253,7 +254,8 @@ def pole_of(meta):
             round(float(meta['pole_el_deg']), 6))
 
 
-def load_saved_strfs(path, group, filter_length_spec, dff, deconvolve, lag_dt):
+def load_saved_strfs(path, group, filter_length_spec, dff, deconvolve, lag_dt,
+                     null_method):
     """Read back a previous run's STRFs, when they describe the SAME analysis.
 
     Re-running to refresh figures should not recompute every STA. But saved
@@ -282,6 +284,16 @@ def load_saved_strfs(path, group, filter_length_spec, dff, deconvolve, lag_dt):
                  float(g.attrs.get('lag_dt', -1.0)))
         want = (str(filter_length_spec), str(dff), bool(deconvolve),
                 float(lag_dt))
+        # The kept set is part of what is saved, so the rule that made it is
+        # part of the analysis identity. A file written before the attr
+        # existed was selected by FDR (the only rule there was) and reads as
+        # such, so switching the default to the percentile recomputes it
+        # rather than redrawing an FDR selection under the new name.
+        saved_null = str(g.attrs.get('null_method', 'fdr'))
+        if saved_null != str(null_method):
+            return ({}, False,
+                    'saved /{} selected rois by {}, this run wants {} - '
+                    'recomputing'.format(group, saved_null, null_method))
         # lag_dt compared with a tolerance, the rest exactly: it is a float a
         # user may retype rather than a label, and 1/60 written back and read
         # again should not count as a different analysis.
@@ -474,6 +486,17 @@ if __name__ == '__main__':
                              "map: 'structural' (default, read from fly.json), "
                              "'each' for one map per channel, or a channel "
                              "number such as '1'.")
+    parser.add_argument('--null_method', nargs='?', default='percentile',
+                        choices=['percentile', 'fdr', 'auto'],
+                        help="how the circular-shift null becomes a kept set. "
+                             "'percentile' (default): an roi is kept when its peak z "
+                             "exceeds the 95th percentile of the pooled null, i.e. "
+                             "p < 0.05 per roi with NO multiple-comparison "
+                             "correction. 'fdr': Benjamini-Hochberg at q=0.05 over "
+                             "the rois. 'auto': fdr where the shift count can resolve "
+                             "it, percentile otherwise. The choice is recorded with "
+                             "the saved STRFs; a file selected by another rule is "
+                             "recomputed, not reused.")
     parser.add_argument('--force_reanalysis', action='store_true',
                         help='recompute even when this file already holds STRFs for '
                              'this tag, overwriting them. Without it a run that finds '
@@ -495,6 +518,7 @@ if __name__ == '__main__':
     dff = args.dff
     bleach_mode = {'auto': 'auto', 'on': True, 'off': False}[str(args.bleach).lower()]
     null_shifts = int(args.null_shifts)
+    null_method = str(args.null_method)
     filter_length_spec = str(args.filter_length)
     lag_dt_s = float(args.lag_dt)
     monitor_hz_override = args.monitor_hz
@@ -540,7 +564,7 @@ if __name__ == '__main__':
     else:
         strf_results, reused, _why = load_saved_strfs(
             experiment_file_path, strf_group, filter_length_spec, dff,
-            args.deconvolve, float(args.lag_dt))
+            args.deconvolve, float(args.lag_dt), null_method)
         print(_why)
     if rig == 'Bruker':
         from visanalysis.plugin import bruker
@@ -578,9 +602,9 @@ if __name__ == '__main__':
         '--filter_length')
 
     print('settings : filter_length={}  dff={}  deconvolve={}  '
-          'null_shifts={}  bleach={}  rig={}'.format(
+          'null_shifts={}  null_method={}  bleach={}  rig={}'.format(
               {k: '{:g}s'.format(v) for k, v in sorted(filter_length_by_ch.items())},
-              dff, args.deconvolve, null_shifts, args.bleach, rig))
+              dff, args.deconvolve, null_shifts, null_method, args.bleach, rig))
     print('           lag_dt {:.5f}s ({:g} Hz)'.format(
         lag_dt_s, (1.0 / lag_dt_s) if lag_dt_s > 0 else float('nan')))
 
@@ -887,12 +911,14 @@ if __name__ == '__main__':
                               'threshold {:.2f}'.format(
                                   null_shifts, time.perf_counter() - _t1, null_threshold))
 
-                        # Turn the null into an actual kept set, the way
-                        # analyze_data_trf_fullfield.py does: FDR over the pooled
-                        # null, falling back to the percentile only where BH could
-                        # not reject anything however strong the effect.
+                        # Turn the null into an actual kept set. By default a
+                        # plain per-roi test: keep every roi whose peak z clears
+                        # the 95th percentile of the pooled null (p < 0.05), with
+                        # no correction over rois -- jcsimon's call (2026-11-16),
+                        # FDR at q=0.05 was discarding too much. --null_method fdr
+                        # is the corrected rule analyze_data_trf_fullfield.py uses.
                         keep_rois, kept_signs, null_select_info = nullcal.select_rois(
-                            _vis_strf, _cal)
+                            _vis_strf, _cal, method=null_method)
                         kept_signs = np.asarray(kept_signs, dtype=int)
                         # Checked, never used to flip traces before averaging:
                         # aligning each ROI to its own peak makes noise add
@@ -908,9 +934,13 @@ if __name__ == '__main__':
                         minority_frac = (min(_npos, _nneg) / float(len(kept_signs))
                                          if len(kept_signs) else 0.0)
                         mixed_polarity = bool(minority_frac > 0.1)
-                        print('    kept {} of {} rois by {} (q=0.05)'.format(
+                        _how_used = null_select_info.get('method_used', '?')
+                        print('    kept {} of {} rois by {}'.format(
                             len(keep_rois), n_roi,
-                            null_select_info.get('method_used', '?')))
+                            ('z > 95th percentile of the null, p < 0.05 per roi, '
+                             'uncorrected' if _how_used == 'percentile'
+                             else 'FDR (q=0.05)' if _how_used == 'fdr'
+                             else _how_used)))
                         print('        polarity: {} positive, {} negative '
                               '({:.1%} minority)'.format(
                                   _npos, _nneg, minority_frac))
@@ -1092,6 +1122,7 @@ if __name__ == '__main__':
             g.attrs['lag_dt'] = float(lag_dt_s)
             g.attrs['dff'] = dff
             g.attrs['deconvolved'] = bool(args.deconvolve)
+            g.attrs['null_method'] = null_method
 
             for (sn, ch, glabel), res in strf_results.items():
                 sg = g.require_group('{}/{}/geom_{}'.format(sn, ch, glabel))
@@ -1375,7 +1406,9 @@ if __name__ == '__main__':
                 np.asarray(res['center_screen_deg'])[rois],
                 float(res['meta']['cell_width_deg']),
                 mode=str(res['meta']['mode']),
-                grid_step=_step_of.get(_parent))
+                grid_step=_step_of.get(_parent),
+                # each cell's OWN width: a wedge seam cell can be a partial one
+                cell_widths_deg=np.asarray(res['widths_deg'], dtype=float)[vis])
             _step_of[gname] = out['grid_step_deg']
             out.update(jitter_deg=float(res.get('jitter_deg', np.nan)),
                        polarity=gname, minority_fraction=float(minority),
@@ -1444,7 +1477,11 @@ if __name__ == '__main__':
             profs = [f[1]['mean'][:, :n_lags] for f in fams]
             grids = [f[1]['grid_deg'] for f in fams]
             width = float(fams[0][1]['cell_width_deg'])
-            rad = radial_from_projections(profs, grids, width)
+            # smooth_width_deg: the registered means spread each cell over its
+            # width, so the forward model must too, or h(r) comes out a box
+            # too wide. See register_average / projection_matrix.
+            rad = radial_from_projections(profs, grids, width,
+                                          smooth_width_deg=width)
             rad.update(families=[f[0] for f in fams], t_lag=fams[0][1]['t_lag'][:n_lags])
             radial_results[ch] = rad
             med = float(np.nanmedian(rad['residual']))
@@ -1478,6 +1515,9 @@ if __name__ == '__main__':
                 del f[avg_group]
             g = f.create_group(avg_group)
             g.attrs['registered_on'] = 'each roi own center_screen_deg'
+            g.attrs['registration'] = (
+                'each cell spread over its own width, overlap-weighted per bin '
+                '(one_d_group.register_average); n_roi_per_bin is summed weight')
             g.attrs['units'] = 'z (per-roi noise)'
             g.attrs['replicate'] = 'roi'
             for (sn, ch, glabel, gname), out in avg_results.items():
@@ -1492,7 +1532,8 @@ if __name__ == '__main__':
                     out['jitter_deg'] if np.isfinite(out['jitter_deg']) else -1.0)
                 sg.attrs['jitter_note'] = (
                     'the mean is broadened by this in quadrature: an apparent '
-                    'width w reads as sqrt(true^2 + jitter^2)')
+                    'width w reads as sqrt(true^2 + jitter^2 + cell^2/12), the '
+                    'last term from spreading each cell over its width')
                 sg.attrs['axis_label'] = out['axis_label']
             for ch, rad in radial_results.items():
                 rg = g.require_group('{}/radial'.format(ch))
@@ -1521,6 +1562,111 @@ if __name__ == '__main__':
         # in the evidence.
         rois_dir = os.path.join(figs_dir, 'rois')
         os.makedirs(rois_dir, exist_ok=True)
+
+        # ── where the kept rois sit in the volume ──────────────────────────
+        # One figure per family, one panel per slice: the mean image under
+        # every roi of the aligned set, the kept ones filled in colour and the
+        # rejected ones a thin outline -- a grey FILL vanishes on the bright
+        # neuropil the rois sit on -- so the question 'is the responsive
+        # population a layer, a column, or scattered noise?' is answered by
+        # looking rather than by cross-referencing roi indices. Colour is
+        # POLARITY, majority blue and minority red, the same convention as the
+        # rf-centre map below, so a kept roi of the dissenting sign can be
+        # placed too. Masks are read from the file here rather than kept from
+        # the analysis pass, because a reused run never made that pass.
+        _masks_cache = {}
+
+        def _roi_masks(sn, ch):
+            if (sn, ch) not in _masks_cache:
+                _rd = roi_data.get((sn, ch))
+                if _rd is None or 'roi_mask' not in _rd:
+                    plug.updateImagingDataObject(
+                        experiment_file_directory, experiment_file_name,
+                        int(sn.replace('sn', '')))
+                    _rd = plug.ImagingDataObject.getRoiMasks(
+                        response_set_name_prefix + ch, roi_prefix='aligned')
+                _masks_cache[(sn, ch)] = (_rd['roi_mask'], _rd['roi_image'])
+            return _masks_cache[(sn, ch)]
+
+        for (sn, ch, glabel), res in sorted(strf_results.items()):
+            _keep = res.get('keep_rois')
+            if _keep is None:
+                continue                      # no null ran: nothing to show
+            _n_roi = res['strf'].shape[0]
+            try:
+                _raw_mask, _img = _roi_masks(sn, ch)
+                _bool = roi_bool_masks(_raw_mask, _n_roi)
+            except (KeyError, AssertionError, ValueError) as _e:
+                print('  {} {} {}: no kept-roi map ({})'.format(sn, ch, glabel, _e))
+                continue
+            _img = np.asarray(_img, dtype=float)
+            if _img.ndim == 2:
+                _img = _img[:, :, np.newaxis]
+            _n_z = _bool[0].shape[-1]
+            if _img.shape[-1] != _n_z:
+                print('  {} {} {}: no kept-roi map (image has {} slices, masks '
+                      '{})'.format(sn, ch, glabel, _img.shape[-1], _n_z))
+                continue
+            _keep = np.asarray(_keep, dtype=int)
+            _signs = res.get('kept_signs')
+            _signs = (np.asarray(_signs, dtype=int) if _signs is not None
+                      else np.ones(len(_keep), dtype=int))
+            _maj = 1 if (_signs > 0).sum() >= (_signs < 0).sum() else -1
+            _col = {1: (0.12, 0.47, 0.71), -1: (0.84, 0.15, 0.16)}
+            _kept_set = {int(r): int(s) for r, s in zip(_keep, _signs)}
+            # Contrast from the whole volume, not per slice, so a dim slice
+            # reads as dim instead of being stretched to look like the others.
+            _lo, _hi = np.nanpercentile(_img, [1.0, 99.5])
+            _hi = _hi if _hi > _lo else _lo + 1.0
+
+            # Panel shape follows the image: this rig's slices are several
+            # times taller than wide, and a square panel for each leaves
+            # most of the page blank. Width is floored so the title fits.
+            _aspect = _img.shape[1] / float(_img.shape[0])     # imshow: cols/rows
+            _ph = 4.2
+            _pw = max(2.4, _ph * _aspect)
+            _ncol = min(_n_z, 5)
+            _nrow = int(np.ceil(_n_z / float(_ncol)))
+            fig, axes = plt.subplots(_nrow, _ncol, squeeze=False,
+                                     figsize=(_pw * _ncol, _ph * _nrow + 0.9),
+                                     constrained_layout=True)
+            for _z in range(_n_z):
+                ax = axes[_z // _ncol, _z % _ncol]
+                ax.imshow(np.clip((_img[:, :, _z] - _lo) / (_hi - _lo), 0, 1),
+                          cmap='gray', vmin=0, vmax=1, interpolation='nearest')
+                _ov = np.zeros(_img.shape[:2] + (4,))
+                _rej = np.zeros(_img.shape[:2], dtype=bool)
+                _n_here, _n_kept_here = 0, 0
+                for _r in range(_n_roi):
+                    _m = _bool[_r][:, :, _z]
+                    if not _m.any():
+                        continue
+                    _n_here += 1
+                    if _r in _kept_set:
+                        _n_kept_here += 1
+                        _ov[_m] = _col[_kept_set[_r] * _maj] + (0.65,)
+                    else:
+                        _rej |= _m
+                ax.imshow(_ov, interpolation='nearest')
+                if _rej.any():
+                    # One contour over the union: neighbouring rejected rois
+                    # share edges, and per-roi outlines would draw them twice.
+                    ax.contour(_rej.astype(float), levels=[0.5],
+                               colors=['#e0e0e0'], linewidths=0.35, alpha=0.9)
+                ax.set_title('slice {}: {} of {} rois kept'.format(
+                    _z, _n_kept_here, _n_here), fontsize=12)
+                ax.set_axis_off()
+            for _z in range(_n_z, _nrow * _ncol):
+                axes[_z // _ncol, _z % _ncol].set_axis_off()
+            fig.suptitle('{} {} {}\nkept {} of {} rois  (blue: majority sign, '
+                         'red: minority sign, outlined: rejected by the null)'.format(
+                             sn, ch, glabel, len(_keep), _n_roi), fontsize=13)
+            if save_figs:
+                fig.savefig(os.path.join(
+                    figs_dir, 'strf_one_d_KEPT_MAP_{}_{}_{}.pdf'.format(
+                        sn, ch, glabel)))
+            if not show_figs:
+                plt.close(fig)
 
         for (sn, ch, glabel), res in strf_results.items():
             strf, t_lag = res['strf'], res['t_lag']
@@ -2056,7 +2202,7 @@ if __name__ == '__main__':
         _span = float(args.mean_span_deg)
         _mean_ax = {}
         for (_sn, _ch, _gl, _gn), _o in avg_results.items():
-            _ks = coverage_bounds(_o['n_roi_per_bin'])
+            _ks = coverage_bounds(_o['n_roi_per_bin'], grid_deg=_o['grid_deg'])
             if _ks.size < 3:
                 continue
             _g, _m, _e = _o['grid_deg'][_ks], _o['mean'][_ks], _o['sem'][_ks]
@@ -2079,9 +2225,12 @@ if __name__ == '__main__':
         for (sn, ch, glabel, gname), out in sorted(avg_results.items()):
             grid, mean, sem = out['grid_deg'], out['mean'], out['sem']
             t_lag = out['t_lag']
-            ks = coverage_bounds(out['n_roi_per_bin'])
+            ks = coverage_bounds(out['n_roi_per_bin'], grid_deg=grid)
             if ks.size < 3:
                 continue
+            # ks is contiguous (coverage_bounds guarantees it), which the
+            # imshow extent below relies on: rows must be evenly spaced in
+            # degrees for a uniform extent to place them where they belong.
             g, m, e = grid[ks], mean[ks], sem[ks]
             _glo, _ghi, _ylo, _yhi, vmax = _mean_ax[ch]
             _pad = 0.05 * (_yhi - _ylo) if _yhi > _ylo else 1.0
