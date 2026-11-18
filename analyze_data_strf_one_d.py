@@ -1876,6 +1876,24 @@ if __name__ == '__main__':
     # The extent uses the 2nd/98th percentile rather than min/max: the raw
     # extremes are two rois, so one mislocalised cell stretches the span and
     # drags the whole window with it.
+    # WHICH CHANNEL'S CENTRES place an roi. The selection channel -- the
+    # structural, calcium one by default -- defines where a cell's receptive
+    # field is. A channel that inherited its kept set from it is registered,
+    # localised and trimmed at THAT channel's centroid of the same roi, never
+    # at its own: its own centroid is a measurement of a weaker indicator, and
+    # for an roi whose filter is mostly noise it is a random position, so
+    # registering there smears the population mean spatially and scatters the
+    # map. Same cell, same receptive field; the position is not a property of
+    # the indicator. Falls back to the channel's own centres only when the
+    # selection channel has no result for the family.
+    def _centre_res(sn, ch, glabel, res):
+        if select_ch is None or ch == select_ch:
+            return res, ch
+        _r = strf_results.get((sn, select_ch, glabel))
+        if _r is None or len(_r.get('center_deg', [])) != len(res['center_deg']):
+            return res, ch
+        return _r, select_ch
+
     edge_sets = {}
     _margins = [float(x) for x in str(args.edge_margins).replace(';', ',').split(',')
                 if x.strip() != '']
@@ -1883,7 +1901,9 @@ if __name__ == '__main__':
         _pos, _byc = {}, {}
         for (sn, ch, glabel), res in sorted(strf_results.items()):
             if str(res['meta']['mode']) in ('bars', 'wedges'):
-                _byc.setdefault(ch, []).append((glabel, res))
+                # the result whose CENTRES localise this channel's rois
+                _byc.setdefault(ch, []).append(
+                    (glabel, _centre_res(sn, ch, glabel, res)[0]))
         for ch, fams in sorted(_byc.items()):
             if len(fams) < 2:
                 continue
@@ -1954,6 +1974,10 @@ if __name__ == '__main__':
         vis = np.asarray(res['visible_cells'], dtype=int)
         signs = np.asarray(res.get('kept_signs', np.ones(len(keep))), dtype=int)
         groups, minority = polarity_groups(signs)
+        _cres, _cch = _centre_res(sn, ch, glabel, res)
+        if _cch != ch:
+            print('  {} {} {}: registered at the {} centroid of each roi'.format(
+                sn, ch, glabel, _cch))
         # Parent first, then its trimmed subsets, so each can be pinned
         # to the parent's bin width. auto_grid_step is data-driven and half as
         # many rois earns coarser bins -- correct on its own terms, but it puts
@@ -2018,14 +2042,15 @@ if __name__ == '__main__':
             out = register_average(
                 res['strf_z'][np.ix_(rois, vis)],
                 np.asarray(res['screen_offset_deg'])[vis],
-                np.asarray(res['center_screen_deg'])[rois],
+                np.asarray(_cres['center_screen_deg'])[rois],
                 float(res['meta']['cell_width_deg']),
                 mode=str(res['meta']['mode']),
                 grid_step=_step_of.get(_parent),
                 # each cell's OWN width: a wedge seam cell can be a partial one
                 cell_widths_deg=np.asarray(res['widths_deg'], dtype=float)[vis])
             _step_of[gname] = out['grid_step_deg']
-            out.update(jitter_deg=float(res.get('jitter_deg', np.nan)),
+            out.update(jitter_deg=float(_cres.get('jitter_deg', np.nan)),
+                       centres_from=_cch,
                        polarity=gname, minority_fraction=float(minority),
                        rois=rois, axis_label=res.get('axis_label', ''),
                        t_lag=res['t_lag'],
@@ -2129,7 +2154,10 @@ if __name__ == '__main__':
             if avg_group in f:
                 del f[avg_group]
             g = f.create_group(avg_group)
-            g.attrs['registered_on'] = 'each roi own center_screen_deg'
+            g.attrs['registered_on'] = (
+                'each roi at its center_screen_deg on the channel named by '
+                'centers_from: the selection (structural) channel for a channel '
+                'that inherited its kept set, otherwise its own')
             g.attrs['registration'] = (
                 'each cell spread over its own width, overlap-weighted per bin '
                 '(one_d_group.register_average); n_roi_per_bin is summed weight')
@@ -2141,6 +2169,7 @@ if __name__ == '__main__':
                     sg.create_dataset(k, data=out[k])
                 sg.create_dataset('t_lag', data=out['t_lag'])
                 sg.attrs['n_roi'] = out['n_roi']
+                sg.attrs['centers_from'] = str(out.get('centres_from', ch))
                 sg.attrs['grid_step_deg'] = out['grid_step_deg']
                 sg.attrs['minority_fraction'] = out['minority_fraction']
                 sg.attrs['registration_jitter_deg'] = (
