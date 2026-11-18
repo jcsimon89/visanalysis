@@ -21,7 +21,7 @@ import os
 # all scripts
 base_path = 'C:/Users/jcsimon/Documents/GitHub/visanalysis'
 experiment_file_head = 'C:/Users/jcsimon/Documents/Stanford/Data/Bruker/eyesss/'
-experiment_file_tail = ['JS140_x_JS261/fly_022']
+experiment_file_tail = ['JS140_x_JS261/fly_021']
 
 
 # EVERY FLY THE STRF CELL RUNS. One entry is the single-fly behaviour; add paths
@@ -213,6 +213,11 @@ edge_margins = '' #string, e.g. '0,10,20'. One extra registered mean per margin,
                   #does NOT mean the same thing on every fly: it bites according
                   #to how compact that fly's population is, and 20 deg left 32% of
                   #fly_016 but only 11% of fly_010.
+peak_window = '' #string, seconds, e.g. '2'. Lag window from lag 0 searched for
+                 #the peak |z|, on the rois and on every null draw alike; '' is
+                 #the pipeline default (nullcal.DEFAULT_PEAK_WINDOW_S), '0' is the
+                 #whole filter. A saved file searched under another window is
+                 #recomputed, not reused.
 
 analyze_data_strf_path = str(os.path.join(base_path, 'analyze_data_strf_one_d.py'))
 
@@ -252,6 +257,8 @@ for _i, _fly in enumerate(fly_dirs):
         command += ' --lag_dt ' + lag_dt
     if deconvolve == 'True':
         command += ' --deconvolve'
+    if peak_window != '':
+        command += ' --peak_window ' + peak_window
 
     # One bad fly must not lose the rest of the run: a missing hdf5 or a series
     # that is not 1D ternary is reported and stepped over, not raised.

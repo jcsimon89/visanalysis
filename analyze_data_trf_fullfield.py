@@ -132,6 +132,11 @@ if __name__ == '__main__':
     parser.add_argument('--bleach', nargs='?', default='auto',
                         help="bleach correction on raw F: 'auto' (default), "
                              "'on', 'off'")
+    parser.add_argument('--peak_window', nargs='?', type=float,
+                        default=nullcal.DEFAULT_PEAK_WINDOW_S,
+                        help='lag window, in seconds from lag 0, searched for the '
+                             'peak |z| -- on the rois and on every null draw alike; '
+                             '0 searches the whole filter. See util.nullcal.')
     parser.add_argument('--null_shifts', nargs='?', type=int, default=20,
                         help='circular-shift null draws; 0 disables. Costs '
                              '(n+1)x the fit. See util.nullcal. Default 20 '
@@ -152,6 +157,7 @@ if __name__ == '__main__':
     bleach_mode = {'auto': 'auto', 'on': True, 'off': False}[str(args.bleach).lower()]
     filter_length_s = float(args.filter_length)
     null_shifts = int(args.null_shifts)
+    peak_window_s = float(args.peak_window)
 
     # Cross-validation scores only rows whose whole lag window lies inside their
     # own block, so a block no longer than the filter leaves nothing to score
@@ -383,6 +389,11 @@ if __name__ == '__main__':
             keep_shape = keep_cv = np.array([], int)
             cv_null_thr = np.nan
             cv_method = 'not run'
+            # Lags searched for the peak, rois and null alike; the noise sd
+            # still comes from the late lags of the full axis. See
+            # nullcal.DEFAULT_PEAK_WINDOW_S.
+            _pl = nullcal.peak_lags_for(peak_window_s, design['dt'],
+                                        design['n_lags'])
             if null_shifts > 0:
                 _t0 = time.perf_counter()
                 try:
@@ -391,8 +402,9 @@ if __name__ == '__main__':
                     shifts = nullcal.shifts_for(duration_s, filter_length_s,
                                                 null_shifts)
                     cal = nullcal.calibrate(
-                        lambda s: ff.fit_rois(design, ridge, shift_s=s), shifts)
-                    z = nullcal.peak_z(h)
+                        lambda s: ff.fit_rois(design, ridge, shift_s=s), shifts,
+                        peak_lags=_pl)
+                    z = nullcal.peak_z(h, peak_lags=_pl)
                     ok = np.isfinite(z)
                     null_p[ok] = nullcal.pvalues(z[ok], cal['null'])[0]
                     null_thr = cal['threshold']
@@ -542,7 +554,8 @@ if __name__ == '__main__':
                 mean_rois=sel, mean_is_selected=bool(len(keep)),
                 kept_signs=kept_signs, mixed_polarity=mixed,
                 trial_rel=trial_rel,
-                null_peak_z=nullcal.peak_z(h), keep=keep, null_info=null_info,
+                null_peak_z=nullcal.peak_z(h, peak_lags=_pl), keep=keep,
+                null_info=null_info,
                 design=design, meta=meta0, freqs=f_ax, mag_mean=mag,
                 band_3db=(f_lo, f_hi, f_pk), duration_s=duration_s,
                 n_dropped_frames=(-1 if n_drop is None else int(n_drop)),
@@ -630,6 +643,8 @@ if __name__ == '__main__':
             sg.attrs['ridge'] = res['ridge']
             sg.attrs['ridge_is_fixed'] = args.ridge is not None
             sg.attrs['dt'] = d['dt']
+            sg.attrs['peak_window_s'] = (float(peak_window_s)
+                                         if peak_window_s > 0 else 0.0)
             sg.attrs['n_epochs'] = d['n_ep']
             sg.attrs['n_rows'] = int(d['Y'].shape[0])
             sg.attrs['n_rows_dropped'] = d['n_rows_dropped']

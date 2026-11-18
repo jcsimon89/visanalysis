@@ -229,6 +229,11 @@ if __name__ == '__main__':
                              'Costs (n+1)x the STRF computation. 20 is the shared '
                              'default of every noise analysis; see util.nullcal '
                              'for why fewer starves FDR in sparse families.')
+    parser.add_argument('--peak_window', nargs='?', type=float,
+                        default=nullcal.DEFAULT_PEAK_WINDOW_S,
+                        help='lag window, in seconds from lag 0, searched for the '
+                             'peak |z| -- on the rois and on every null draw alike; '
+                             '0 searches the whole filter. See util.nullcal.')
     parser.add_argument('--bleach', nargs='?', default='auto',
                         help="bleach correction on raw F: 'auto' (default, applied when the "
                              "epoch is long enough), 'on', or 'off'. See util.bleach.")
@@ -248,6 +253,7 @@ if __name__ == '__main__':
     # must be multiplicative and why 'auto' skips short epochs rather than raising.
     bleach_mode = {'auto': 'auto', 'on': True, 'off': False}[str(args.bleach).lower()]
     null_shifts = int(args.null_shifts)
+    peak_window_s = float(args.peak_window)
     filter_length_s = args.filter_length
 
     show_figs = args.show_figs == 'True'
@@ -587,10 +593,18 @@ if __name__ == '__main__':
                             n_roi, filter_length_s, pre_time)[0]
                     _dur = trials[0]['stim_1d'].shape[0] * _sdt
                     _t1 = time.perf_counter()
+                    # Lags searched for the peak, rois and null alike; the
+                    # noise sd still comes from the late lags of the full
+                    # axis. See nullcal.DEFAULT_PEAK_WINDOW_S.
+                    _pl = nullcal.peak_lags_for(
+                        peak_window_s,
+                        float(t_lag[1] - t_lag[0]) if len(t_lag) > 1 else _sdt,
+                        strf.shape[-1])
                     _cal = nullcal.calibrate(
                         _shifted,
-                        nullcal.shifts_for(_dur, filter_length_s, null_shifts))
-                    _z = nullcal.peak_z(strf)
+                        nullcal.shifts_for(_dur, filter_length_s, null_shifts),
+                        peak_lags=_pl)
+                    _z = nullcal.peak_z(strf, peak_lags=_pl)
                     null_p = np.full(n_roi, np.nan)
                     _ok = np.isfinite(_z)
                     null_p[_ok] = nullcal.pvalues(_z[_ok], _cal['null'])[0]
@@ -683,6 +697,7 @@ if __name__ == '__main__':
         g = f.create_group(strf_group)
         g.attrs['filter_length_s'] = filter_length_s
         g.attrs['dff'] = dff
+        g.attrs['peak_window_s'] = float(peak_window_s) if peak_window_s > 0 else 0.0
 
         for (sn, ch, orientation, noisetau), res in strf_results.items():
             sg = g.require_group(f'{sn}/{ch}/rtz_{orientation}/noisetau_{noisetau}')

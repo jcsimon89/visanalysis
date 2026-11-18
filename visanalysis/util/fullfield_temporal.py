@@ -333,7 +333,8 @@ def integration_index(h):
 
 def analyze_series(ID, channel, lag_s=10.0, roi_prefix="aligned", band=None,
                    ridge=None, seed=0, correct_bleach="auto",
-                   null_shifts=nullcal.DEFAULT_SHIFTS):
+                   null_shifts=nullcal.DEFAULT_SHIFTS,
+                   peak_window_s=nullcal.DEFAULT_PEAK_WINDOW_S):
     """Everything, in the order the checks have to happen.
 
     Returns a dict. `usable` is False when the cross-validated r fails to clear
@@ -369,14 +370,18 @@ def analyze_series(ID, channel, lag_s=10.0, roi_prefix="aligned", band=None,
         dur = (float(_rp.get('pre_time', 0.0)) + float(_rp.get('stim_time', 0.0))
                + float(_rp.get('tail_time', 0.0)))
         try:
+            # Lags searched for the peak, filter and null alike; see
+            # nullcal.DEFAULT_PEAK_WINDOW_S.
+            _pl = nullcal.peak_lags_for(peak_window_s, dt, len(h))
             draws = []
             for sh in nullcal.shifts_for(dur, lag_s, null_shifts):
                 Xn, yn, en, _, _ = build_design(
                     ID, channel, lag_s=lag_s, roi_prefix=roi_prefix, band=band,
                     correct_bleach=correct_bleach, shift_s=sh)
-                draws.append(nullcal.peak_z(fit_filter(Xn, yn, ridge)[None, :]))
+                draws.append(nullcal.peak_z(fit_filter(Xn, yn, ridge)[None, :],
+                                            peak_lags=_pl))
             null = np.concatenate(draws)
-            null_z = float(nullcal.peak_z(h[None, :])[0])
+            null_z = float(nullcal.peak_z(h[None, :], peak_lags=_pl)[0])
             null_p = float(nullcal.pvalues(np.array([null_z]), null)[0][0])
             null_thr = float(np.percentile(null[np.isfinite(null)], 95))
         except ValueError:

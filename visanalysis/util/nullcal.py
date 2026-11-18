@@ -33,6 +33,12 @@ SNR on 300 s epochs. Shifts cost compute instead: (n_shifts + 1)x the filter
 computation, offline and one-time. Compute is cheap and data is not, so shifts
 are the better trade even though they look more expensive.
 
+THE LAG WINDOW. The maximum is taken over the first DEFAULT_PEAK_WINDOW_S
+seconds of lag, on the ROIs and on every null draw alike. Lags the first lobe
+can never reach are pure noise on both sides and only raise the cutoff; see the
+measurements at DEFAULT_PEAK_WINDOW_S. The noise scale still comes from the
+late lags of the full axis, which the window never touches.
+
 The threshold is an OUTPUT. Record it with the analysis, but never carry a
 value into another one.
 
@@ -58,9 +64,36 @@ import numpy as np
 #: recording start to sample overlapping stretches and stop being independent.
 DEFAULT_SHIFTS = 20
 
+#: Default lag window, in seconds from lag 0, searched for the peak (jcsimon,
+#: 2026-11-17). The statistic is a max over cells x lags and the null is the
+#: same max, so every lag the first lobe can never reach is one more pure-noise
+#: comparison on both sides and only raises the cutoff a real filter has to
+#: clear. Measured on JS140_x_JS261 fly_022 ch1 (20 shifts, null windowed the
+#: same way): the null's 95th percentile fell from z 4.5 over the whole 10 s
+#: axis to 4.1 at 2 s and 3.9 at 1 s; kept rois went from 4/75/52/72 across its
+#: four families to 8/88/62/77 (2 s) and 16/95/66/79 (1 s), losing at most 2
+#: in any family. Of the rois gained in the weak hold-0.04 families, 4 of 4 and
+#: 8 of 12 were already kept by the strong hold-0.4 family about the same pole
+#: (base rate 0.35). At 0.5 s the hold-0.4 families start losing real rois,
+#: because the hold smears their peak out to 0.3-0.5 s. The window has to
+#: cover the slowest filter a pipeline will ever select on: cAMP peaks at
+#: 0.5-0.9 s and crosses zero near 2 s at hold 0.4, so 2 s is the floor when
+#: that channel is tested on itself. 0 or None searches the whole axis.
+DEFAULT_PEAK_WINDOW_S = 2.0
 
-def peak_z(filt, noise_frac=0.3):
-    """Per-ROI peak |z|, noise scale from the longest lags.
+
+def peak_lags_for(window_s, lag_dt_s, n_lags):
+    """Number of leading lags a window of `window_s` seconds covers, clamped
+    to [1, n_lags]. None (search every lag) when window_s is None or <= 0."""
+    if window_s is None or not float(window_s) > 0:
+        return None
+    n = int(np.ceil(float(window_s) / float(lag_dt_s)))
+    return int(min(max(n, 1), int(n_lags)))
+
+
+def peak_z(filt, noise_frac=0.3, peak_lags=None):
+    """Per-ROI peak |z| over the first `peak_lags` lags (every lag when
+    None), noise scale from the longest lags of the full axis.
 
     filt : (n_roi, ..., n_lags). Works for the 1D bar STRF (n_roi, n_pos,
     n_lags), the octave cell basis (n_roi, n_cells, n_lags) and a plain
@@ -70,11 +103,12 @@ def peak_z(filt, noise_frac=0.3):
     filt = np.asarray(filt)
     n_lags = filt.shape[-1]
     late = slice(int(round((1.0 - noise_frac) * n_lags)), n_lags)
+    win = slice(0, n_lags if peak_lags is None else int(peak_lags))
     out = np.full(filt.shape[0], np.nan)
     for r in range(filt.shape[0]):
         sd = np.nanstd(filt[r][..., late])
         if sd > 0 and np.isfinite(sd):
-            out[r] = np.nanmax(np.abs(filt[r] / sd))
+            out[r] = np.nanmax(np.abs(filt[r][..., win] / sd))
     return out
 
 
@@ -94,7 +128,8 @@ def shifts_for(duration_s, filter_length_s, n_shifts=DEFAULT_SHIFTS):
     return list(np.linspace(lo, hi, int(n_shifts) + 2)[1:-1])
 
 
-def calibrate(make_filter, shifts, percentile=95.0, noise_frac=0.3):
+def calibrate(make_filter, shifts, percentile=95.0, noise_frac=0.3,
+              peak_lags=None):
     """Null from circular shifts of the stimulus.
 
     make_filter : callable(shift_s) -> (n_roi, ..., n_lags)
@@ -103,11 +138,14 @@ def calibrate(make_filter, shifts, percentile=95.0, noise_frac=0.3):
         need to know the stimulus representation.
     shifts : sequence of float
         Use shifts_for() unless there is a reason not to.
+    peak_lags : int or None
+        Leading lags searched for the peak (peak_lags_for); recorded in the
+        result so select_rois searches the ROIs over the same lags.
     """
     shifts = list(shifts)
     if not shifts:
         raise ValueError('need at least one shift; several is better')
-    draws = [peak_z(make_filter(s), noise_frac) for s in shifts]
+    draws = [peak_z(make_filter(s), noise_frac, peak_lags) for s in shifts]
     per_shift = [dict(shift_s=float(s), n=int(np.isfinite(d).sum()),
                       p95=float(np.nanpercentile(d, 95)))
                  for s, d in zip(shifts, draws)]
@@ -118,7 +156,7 @@ def calibrate(make_filter, shifts, percentile=95.0, noise_frac=0.3):
     return dict(threshold=float(np.percentile(null, percentile)), null=null,
                 shifts=shifts, n_shifts=len(shifts), per_shift=per_shift,
                 percentile=float(percentile), n_null=int(null.size),
-                noise_frac=float(noise_frac))
+                noise_frac=float(noise_frac), peak_lags=peak_lags)
 
 
 def pvalues(observed, null):
@@ -154,8 +192,13 @@ def benjamini_hochberg(p, q=0.05):
     return np.sort(order[:k + 1]), float(p[order][k])
 
 
-def select_rois(filt, cal, method='auto', q=0.05, noise_frac=0.3):
+def select_rois(filt, cal, method='auto', q=0.05, noise_frac=0.3,
+                peak_lags=None):
     """Apply the null: FDR by default, percentile only when FDR cannot work.
+
+    The peak is searched over the lags the null was calibrated with
+    (cal['peak_lags']) unless `peak_lags` is given, so both sides of the test
+    always take their maximum over the same lags.
 
     There is deliberately no minimum-ROI rule. The resolution limit is
     k >= m/((n_null + 1) q), and with the null pooled over ROIs the m cancels,
@@ -167,14 +210,18 @@ def select_rois(filt, cal, method='auto', q=0.05, noise_frac=0.3):
     Returns (keep, signs, info). `signs` is for CHECKING polarity uniformity,
     never for flipping traces before averaging.
     """
-    z = peak_z(filt, noise_frac)
+    if peak_lags is None:
+        peak_lags = cal.get('peak_lags')
+    z = peak_z(filt, noise_frac, peak_lags)
     ok = np.isfinite(z)
     m = int(ok.sum())
     n_shifts = int(cal.get('n_shifts', len(cal.get('shifts', [1]))))
     resolvable = int(np.ceil(1.0 / (q * max(n_shifts, 1))))
     use_fdr = method == 'fdr' or (method == 'auto' and resolvable <= m)
     info = dict(n_roi=m, n_shifts=n_shifts, min_detectable_k=resolvable,
-                q=float(q), method_requested=method)
+                q=float(q), method_requested=method,
+                peak_lags_searched=int(np.asarray(filt).shape[-1]
+                                       if peak_lags is None else peak_lags))
 
     if use_fdr:
         p, meta = pvalues(z[ok], cal['null'])
@@ -197,11 +244,13 @@ def select_rois(filt, cal, method='auto', q=0.05, noise_frac=0.3):
                                        cal.get('percentile', 95.0)),
                     reason='min_detectable_k={} > n_roi={}'.format(resolvable, m))
 
-    return keep, peak_signs(filt, keep, noise_frac), info
+    return keep, peak_signs(filt, keep, noise_frac, peak_lags), info
 
 
-def peak_signs(filt, keep, noise_frac=0.3):
-    """Sign of each kept ROI's filter at its own |z| extremum.
+def peak_signs(filt, keep, noise_frac=0.3, peak_lags=None):
+    """Sign of each kept ROI's filter at its own |z| extremum, searched over
+    the same leading lags as peak_z so the sign belongs to the peak that was
+    tested.
 
     Split out of select_rois so a kept set decided on ANOTHER channel can be
     given this channel's own polarities: the set says which cells responded,
@@ -211,10 +260,11 @@ def peak_signs(filt, keep, noise_frac=0.3):
     filt = np.asarray(filt)
     n_lags = filt.shape[-1]
     late = slice(int(round((1.0 - noise_frac) * n_lags)), n_lags)
+    win = slice(0, n_lags if peak_lags is None else int(peak_lags))
     keep = np.asarray(keep, dtype=int)
     signs = np.zeros(len(keep))
     for i, r in enumerate(keep):
-        zz = filt[r] / np.nanstd(filt[r][..., late])
+        zz = filt[r][..., win] / np.nanstd(filt[r][..., late])
         signs[i] = np.sign(zz.ravel()[int(np.nanargmax(np.abs(zz)))])
     return signs
 
@@ -230,10 +280,10 @@ def peak_signs(filt, keep, noise_frac=0.3):
 # favours the slow lobe, and on JS140_x_JS261 fly_022 the extremum rule called
 # 21 and 28 of 75 and 72 kept Mi1 rois negative; the same rois in the OTHER pole
 # family (independent data, same cells) disagreed with themselves 8 times in 61.
-# Polarity is a property of the ONSET, so it is read from the first lobe, and
-# the registration lag -- where the spatial profile is centroided -- is the
-# first lobe's peak, because that is the direct response; a delayed surround or
-# an adaptation rebound can have a different spatial footprint.
+# Polarity is a property of the ONSET, so it is read from the first lobe. Where
+# the spatial profile is read is a separate question with a different answer:
+# the first lobe's peak is the wrong single lag whenever the rebound dominates
+# (see template_lag_weights), so callers project onto the template instead.
 #
 # HOW, and why not simply "first run above threshold". Every per-roi onset
 # detector tried on fly_022 sat on one trade-off: strict enough to ignore a
@@ -418,6 +468,12 @@ def first_lobe_polarity(filt, keep, noise_frac=0.3, smooth=5, z_min=2.0,
     """Polarity and first-lobe lag of each kept ROI, by template projection.
 
     filt : (n_roi, n_cells, n_lags), the VISIBLE cells only (as for peak_signs).
+           Pass it in NOISE UNITS (each roi's filter over its own noise sd,
+           e.g. one_d_strf.zscore_from_noise_cells): the template is a plain
+           mean of the rois' traces, so their scale is their weight in it.
+           In z units a roi weighs in by its SNR; in raw filter units a few
+           large-amplitude rois would set the family's kinetics. A roi's own
+           sign, lag and |cos| do not depend on its own scale.
     keep : indices of the kept ROIs -- the family the template is built from.
 
     Steps. (1) One lobe_trace per kept roi. (2) Initial signs from first_lobe
@@ -533,3 +589,27 @@ def first_lobe_polarity(filt, keep, noise_frac=0.3, smooth=5, z_min=2.0,
                rule_used=rule, n_iter_used=int(it),
                n_flipped_vs_extremum=int(np.sum(signs != ext)))
     return out
+
+
+def template_lag_weights(template, frac=0.1):
+    """Unit-norm weights over the lag axis for projecting a filter onto the
+    family template: the template itself on its support, zero elsewhere.
+
+    `filt[r] @ weights` is then a spatial profile that uses every lag carrying
+    signal -- a matched filter across lags, the rank-1 spatial component with
+    the temporal vector FIXED to the family's rather than estimated per roi
+    (per roi, on a few cells by hundreds of mostly empty lags, it locks onto
+    noise). The support is where |template| exceeds `frac` of its maximum, so
+    the long empty tail contributes no noise. Unit norm keeps a single slice's
+    nominal noise sd on the profile. Returns None when the template is unusable
+    (non-finite or all zero), which is how a family too small to have one
+    reads.
+    """
+    t = np.asarray(template, dtype=float)
+    if t.size == 0 or not np.all(np.isfinite(t)):
+        return None
+    peak = float(np.max(np.abs(t)))
+    if peak <= 0:
+        return None
+    w = np.where(np.abs(t) > float(frac) * peak, t, 0.0)
+    return w / np.sqrt(np.sum(w ** 2))

@@ -63,11 +63,26 @@ HOW THIS DIFFERS FROM THE NOIZONE PIPELINE
 * The cell basis is overcomplete across octaves -- one 25 deg cell overlaps ~17
   of the 6 deg ones -- so the layers are NOT summed into a picture. Each octave
   independently measures the cell-averaged filter at its own scale.
+
+WHICH ROIS ARE KEPT
+-------------------
+As in the 1D twin (analyze_data_strf_one_d.py): the circular-shift null
+(util.nullcal) runs on ONE channel, by default the structural channel from
+fly.json -- the calcium indicator in this lab's convention -- and the kept set
+it produces is handed to every other channel of the same family (series and
+rotation seed). The other channels are not tested at all: the kept set answers
+"which cells responded", read from the indicator that reports a response
+reliably, and a slow or weak second indicator (cAMP) is then measured on
+exactly those cells. Each channel still reads its own polarity off its own
+filter. --select_channel each restores the old rule, every channel on itself;
+the choice is recorded with the saved STRFs.
 """
 
 import sys
 import os
 import argparse
+import json
+import pathlib
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -111,6 +126,20 @@ if __name__ == '__main__':
                              'the joint fit. 20 is the shared default of every noise '
                              'analysis; see util.nullcal for why fewer starves FDR '
                              'in sparse families.')
+    parser.add_argument('--peak_window', nargs='?', type=float,
+                        default=nullcal.DEFAULT_PEAK_WINDOW_S,
+                        help='lag window, in seconds from lag 0, searched for the '
+                             'peak |z| -- on the rois and on every null draw alike; '
+                             '0 searches the whole filter. See util.nullcal.')
+    parser.add_argument('--select_channel', nargs='?', default='structural',
+                        help="which channel's null decides the kept rois for ALL "
+                             "channels of a family: 'structural' (default, read from "
+                             "fly.json; calcium by lab convention), a channel number "
+                             "such as '1', or 'each' to test every channel on itself "
+                             "(the old rule). Other channels run no null; they take "
+                             "the kept set and read their own polarity off their own "
+                             "filter. A family is a series and a rotation seed. "
+                             "Recorded with the saved STRFs.")
     parser.add_argument('--bleach', nargs='?', default='auto',
                         help="bleach correction on raw F: 'auto' (default), 'on', 'off'")
     parser.add_argument('--filter_length', nargs='?', type=float, default=10.0,
@@ -146,6 +175,7 @@ if __name__ == '__main__':
     # bleaching from signal. See visanalysis.util.bleach.
     bleach_mode = {'auto': 'auto', 'on': True, 'off': False}[str(args.bleach).lower()]
     null_shifts = int(args.null_shifts)
+    peak_window_s = float(args.peak_window)
     filter_length_s = float(args.filter_length)
     monitor_hz_override = args.monitor_hz
 
@@ -182,7 +212,46 @@ if __name__ == '__main__':
         plug = base_plugin.BasePlugin()
 
     response_set_name_prefix = 'mask_'
-    func_channels_num = ['1', '2']
+
+    # Channels come from fly.json, as the 1D twin reads them, rather than
+    # being assumed to be 1 and 2. The STRUCTURAL channel is the one set to
+    # calcium in this lab's convention and decides the kept set by default.
+    struct_channel_num = None
+    try:
+        with open(pathlib.Path(experiment_file_directory, 'fly.json'), 'r') as _f:
+            _fly_json = json.load(_f)
+        struct_channel_num = str(_fly_json['structural_channel']).split('_')[-1]
+        _fc = _fly_json['functional_channel'].replace('[', '').replace(']', '')
+        func_channels_num = [c.split('_')[-1].strip()
+                             for c in _fc.replace("'", '').split(',') if c.strip()]
+        print('structural channel: ch{}   functional: {}'.format(
+            struct_channel_num, ['ch' + c for c in func_channels_num]))
+    except (IOError, OSError, KeyError, ValueError) as _e:
+        func_channels_num = ['1', '2']
+        print('could not read fly.json ({}); assuming functional channels 1 and 2 '
+              'and no structural channel'.format(_e))
+
+    # Which channel's null decides the kept set (None: each on itself). A
+    # channel that is not functional is an error, not a fallback: a typo must
+    # not silently change what every other channel is measured on.
+    _sel = str(args.select_channel).lower()
+    if _sel == 'structural' and struct_channel_num is not None:
+        select_ch = 'ch' + str(struct_channel_num)
+    elif _sel in ('each', 'all'):
+        select_ch = None
+    elif _sel == 'structural':
+        select_ch = None
+        print('no structural channel in fly.json; every channel selects its '
+              'own rois (--select_channel each)')
+    else:
+        select_ch = _sel if _sel.startswith('ch') else 'ch' + _sel
+    if select_ch is not None and select_ch not in ['ch' + c for c in func_channels_num]:
+        print('--select_channel {}: not a functional channel of this fly ({})'
+              .format(args.select_channel, ['ch' + c for c in func_channels_num]))
+        sys.exit(1)
+    print('roi selection: {}'.format(
+        'each channel on itself' if select_ch is None
+        else 'on {}, inherited by the rest'.format(select_ch)))
 
     # ── fly metadata and photodiode channel ──────────────────────────────────
     series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path)))
@@ -271,7 +340,10 @@ if __name__ == '__main__':
         print('  {}: {} dropped monitor frames (monitor_hz={})'.format(
             sn, len(drop_times_abs_s), frame_rate))
 
-        for current_channel in func_channels_num:
+        # The selection channel goes first, so its kept set already exists
+        # for each family when the other channels reach for it below.
+        _ch_order = sorted(func_channels_num, key=lambda c: 'ch' + c != select_ch)
+        for current_channel in _ch_order:
             ch = 'ch' + current_channel
             if (sn, ch) not in roi_data:
                 continue
@@ -428,7 +500,39 @@ if __name__ == '__main__':
                 null_p, null_thr = None, None
                 null_keep, null_signs, null_select = None, None, {}
                 null_mixed = False
-                if null_shifts > 0:
+                # Lags searched for the peak, rois and null alike; the noise
+                # sd still comes from the late lags of the full axis. See
+                # nullcal.DEFAULT_PEAK_WINDOW_S.
+                _pl = nullcal.peak_lags_for(peak_window_s, lag_dt,
+                                            strf_unified.shape[-1])
+                # Inherit, or test. Every channel but the selection channel
+                # takes the kept set that channel's null produced for THIS
+                # family (same series, same rotation seed) and runs no null of
+                # its own; its signs are still its own. See the module
+                # docstring, WHICH ROIS ARE KEPT.
+                _inherit_from = (select_ch if select_ch is not None and ch != select_ch
+                                 else None)
+                if null_shifts > 0 and _inherit_from is not None:
+                    _src = strf_results.get((sn, _inherit_from, rot))
+                    null_select = {'method_used': 'inherited',
+                                   'from_channel': _inherit_from, 'n_roi': n_roi}
+                    if _src is None or _src.get('keep_rois') is None:
+                        null_select['warning'] = (
+                            'no kept set on {} for this family (its null did not '
+                            'run); nothing inherited'.format(_inherit_from))
+                        print('    ' + null_select['warning'])
+                    else:
+                        null_keep = np.asarray(_src['keep_rois'], dtype=int)
+                        null_signs = np.asarray(nullcal.peak_signs(
+                            strf_unified[:, fine_vis, :], null_keep, peak_lags=_pl),
+                            dtype=int)
+                        null_select['from_method'] = str(
+                            _src.get('null_select_info', {}).get('method_used', '?'))
+                        print('    kept {} of {} rois: the set {} selected for this '
+                              'family ({}); no null run on {}'.format(
+                                  len(null_keep), n_roi, _inherit_from,
+                                  null_select['from_method'], ch))
+                elif null_shifts > 0:
                     _sdt = float(trials[0]['stim_dt'])
 
                     def _shifted(shift_s, _tr=trials, _sdt=_sdt):
@@ -451,9 +555,10 @@ if __name__ == '__main__':
                     _t1 = time.perf_counter()
                     _cal = nullcal.calibrate(
                         _shifted,
-                        nullcal.shifts_for(_dur, filter_length_s, null_shifts))
+                        nullcal.shifts_for(_dur, filter_length_s, null_shifts),
+                        peak_lags=_pl)
                     _vis_unified = strf_unified[:, fine_vis, :]
-                    _z = nullcal.peak_z(_vis_unified)
+                    _z = nullcal.peak_z(_vis_unified, peak_lags=_pl)
                     null_p = np.full(n_roi, np.nan)
                     _ok = np.isfinite(_z)
                     null_p[_ok] = nullcal.pvalues(_z[_ok], _cal['null'])[0]
@@ -469,26 +574,32 @@ if __name__ == '__main__':
                     null_keep, null_signs, null_select = nullcal.select_rois(
                         _vis_unified, _cal)
                     null_signs = np.asarray(null_signs, dtype=int)
+                    print('    kept {} of {} rois by {} (q=0.05)'.format(
+                        len(null_keep), n_roi, null_select.get('method_used', '?')))
+                    if 'warning' in null_select:
+                        print('        {}'.format(null_select['warning']))
+                    print('    [timing] null ({} shifts) took {:.2f}s; '
+                          'threshold {:.2f}; peak searched over {} of {} lags'.format(
+                              null_shifts, time.perf_counter() - _t1, null_thr,
+                              strf_unified.shape[-1] if _pl is None else _pl,
+                              strf_unified.shape[-1]))
+
+                if null_signs is not None:
                     # Minority FRACTION, not 'both signs present' -- two dissenters
                     # out of hundreds is a uniform population, and a warning that
-                    # fires on it is one an operator learns to ignore.
+                    # fires on it is one an operator learns to ignore. On an
+                    # inherited set these are THIS channel's signs over the other
+                    # channel's cells, which is exactly the comparison wanted.
                     _npos = int((null_signs > 0).sum())
                     _nneg = int((null_signs < 0).sum())
                     null_minor = (min(_npos, _nneg) / float(len(null_signs))
                                   if len(null_signs) else 0.0)
                     null_mixed = bool(null_minor > 0.1)
-                    print('    kept {} of {} rois by {} (q=0.05)'.format(
-                        len(null_keep), n_roi, null_select.get('method_used', '?')))
                     print('        polarity: {} positive, {} negative '
                           '({:.1%} minority)'.format(_npos, _nneg, null_minor))
                     if null_mixed:
                         print('        NOTE: genuinely MIXED in polarity; '
                               'split them rather than averaging together.')
-                    if 'warning' in null_select:
-                        print('        {}'.format(null_select['warning']))
-                    print('    [timing] null ({} shifts) took {:.2f}s; '
-                          'threshold {:.2f}'.format(
-                              null_shifts, time.perf_counter() - _t1, null_thr))
 
                 print('    [timing] fit_joint_cells took {:.2f}s  '
                       '({} fine cells from {} octaves, ridge {:.0e}, {})'.format(
@@ -585,6 +696,8 @@ if __name__ == '__main__':
         g.attrs['filter_length_s'] = filter_length_s
         g.attrs['dff'] = dff
         g.attrs['deconvolved'] = bool(args.deconvolve)
+        g.attrs['roi_selection_channel'] = 'each' if select_ch is None else select_ch
+        g.attrs['peak_window_s'] = float(peak_window_s) if peak_window_s > 0 else 0.0
 
         for (sn, ch, rot), res in strf_results.items():
             sg = g.require_group('{}/{}/rot_{}'.format(sn, ch, rot))
@@ -606,13 +719,19 @@ if __name__ == '__main__':
             if res['null_p'] is not None:
                 sg.create_dataset('null_p', data=res['null_p'])
                 sg.attrs['null_threshold'] = res['null_threshold']
+                sg.attrs['peak_window_s'] = (float(peak_window_s)
+                                             if peak_window_s > 0 else 0.0)
             if res['keep_rois'] is not None:
                 sg.create_dataset('kept_rois',
                                   data=np.asarray(res['keep_rois'], dtype=int))
                 sg.create_dataset('kept_signs',
                                   data=np.asarray(res['kept_signs'], dtype=int))
                 sg.attrs['kept_mixed_polarity'] = res['mixed_polarity']
-                sg.attrs['selection_basis'] = 'visible cells only'
+                _nsi = res['null_select_info']
+                sg.attrs['selection_basis'] = (
+                    'visible cells only' if _nsi.get('method_used') != 'inherited'
+                    else 'visible cells only; kept set inherited from {}, no null '
+                         'run on this channel'.format(_nsi.get('from_channel')))
                 for _k, _v in res['null_select_info'].items():
                     sg.attrs['null_select_' + _k] = _v
             sg.attrs['rotation_seed'] = rot
