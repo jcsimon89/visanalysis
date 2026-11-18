@@ -79,9 +79,8 @@ saved STRFs and a file selected the other way is recomputed, not reused.
 POLARITY AND THE REGISTRATION LAG
 ---------------------------------
 A kept roi's sign is the sign of its filter's FIRST lobe, not of its largest
-value, and its spatial profile is centroided at that lobe's peak
-(`peak_lag_ind` for kept rois; the energy peak for the rest, which are never
-registered). The extremum is the detection statistic the null calibrates, but
+value (`peak_lag_ind` is that lobe's peak for kept rois, the energy peak for
+the rest). The extremum is the detection statistic the null calibrates, but
 a biphasic calcium filter's rebound can outgrow its first lobe once the
 stimulus hold has smeared both: on fly_022 at hold_tau 0.4 the extremum rule
 called a third of the kept Mi1 rois negative and contradicted itself between
@@ -93,6 +92,15 @@ each choice; 61 of 61 agreements on the same fly). The extremum signs are
 saved alongside as `kept_signs_extremum`, with `polarity_confidence` (|cos|
 to the template) and `first_lobe_lag_ind` per kept roi; the rule is the
 group attr `polarity_rule` and is part of the reuse check.
+
+The CENTROID of a kept roi is not read at any single lag. Its spatial profile
+is the filter projected onto the same family template across lags -- each
+cell's time course times the template, summed over the template's support --
+which uses every lag that carries signal and has no lag to choose. A single
+slice fails either way: at the first-lobe peak when the rebound dominates
+(the smeared first lobe is a sliver), at the energy peak when a weak roi's
+maximum is a noise lag. See the comment at the centroid block; recorded as
+the group attr `registration_rule`, also part of the reuse check.
 """
 
 import sys
@@ -132,13 +140,14 @@ plt.ioff()
 
 apply_figure_style()
 
-#: How kept rois get their sign and their registration lag. Recorded with the
+#: How kept rois get their sign and their first-lobe lag. Recorded with the
 #: saved STRFs; a file written under another rule is recomputed, not reused.
 #: See nullcal, section POLARITY, and the module docstring above.
 POLARITY_RULE = 'first_lobe'
-#: Where the spatial profile is read for the centroid (--registration); the
-#: first entry is the default. Recorded with the saved STRFs likewise.
-REGISTRATION_RULES = ('first_lobe', 'first_lobe_matched', 'energy_peak')
+#: Where a kept roi's spatial profile is read for its centroid: the filter
+#: projected onto the family template across lags (see the module docstring).
+#: Recorded with the saved STRFs likewise.
+REGISTRATION_RULE = 'matched_profile'
 
 
 def parse_per_channel(spec, channels, default, name):
@@ -326,7 +335,7 @@ def _full_meta_from_epochs(f, sn, saved_meta):
 
 def load_saved_strfs(path, group, filter_length_spec, filter_length_by_ch,
                      dff, deconvolve, lag_dt, null_method, select_channel,
-                     registration_rule=REGISTRATION_RULES[0]):
+                     peak_window_s=nullcal.DEFAULT_PEAK_WINDOW_S):
     """Read back a previous run's STRFs, when they describe the SAME analysis.
 
     Re-running to refresh figures should not recompute every STA. But saved
@@ -418,12 +427,26 @@ def load_saved_strfs(path, group, filter_length_spec, filter_length_by_ch,
             return ({}, False,
                     'saved /{} read polarity by the {} rule, this run uses {} - '
                     'recomputing'.format(group, saved_pol, POLARITY_RULE))
+        # And the LAG WINDOW the peak was searched over, rois and null alike.
+        # A file from before the attr existed searched the whole axis, which
+        # is what 0 means, so it reads as 0 and recomputes under any window.
+        saved_win = float(g.attrs.get('peak_window_s', 0.0))
+        want_win = float(peak_window_s) if float(peak_window_s) > 0 else 0.0
+        if not np.isclose(saved_win, want_win, rtol=1e-9, atol=1e-9):
+            return ({}, False,
+                    'saved /{} searched the peak over {}, this run wants {} - '
+                    'recomputing'.format(
+                        group,
+                        '{:g} s of lag'.format(saved_win) if saved_win > 0
+                        else 'the whole filter',
+                        '{:g} s of lag'.format(want_win) if want_win > 0
+                        else 'the whole filter'))
         _rr = g.attrs.get('registration_rule', 'energy_peak')
         saved_reg = _rr.decode('utf-8') if isinstance(_rr, bytes) else str(_rr)
-        if saved_reg != str(registration_rule):
+        if saved_reg != REGISTRATION_RULE:
             return ({}, False,
-                    'saved /{} registered rois by {}, this run wants {} - '
-                    'recomputing'.format(group, saved_reg, registration_rule))
+                    'saved /{} registered rois by {}, this run uses {} - '
+                    'recomputing'.format(group, saved_reg, REGISTRATION_RULE))
         # lag_dt compared with a tolerance, the rest exactly: it is a float a
         # user may retype rather than a label, and 1/60 written back and read
         # again should not count as a different analysis.
@@ -552,6 +575,11 @@ if __name__ == '__main__':
                              '~20 the shifts start sampling overlapping stretches of '
                              'one recording, so the draws stop being independent. '
                              'See util.nullcal.')
+    parser.add_argument('--peak_window', nargs='?', type=float,
+                        default=nullcal.DEFAULT_PEAK_WINDOW_S,
+                        help='lag window, in seconds from lag 0, searched for the '
+                             'peak |z| -- on the rois and on every null draw alike; '
+                             '0 searches the whole filter. See util.nullcal.')
     parser.add_argument('--bleach', nargs='?', default='auto',
                         help="bleach correction on raw F: 'auto' (default), 'on', 'off'")
     parser.add_argument('--filter_length', nargs='?', default='10.0',
@@ -669,24 +697,6 @@ if __name__ == '__main__':
                              "filter. Families are per hold_tau, so each tau is "
                              "selected on its own. Recorded with the saved STRFs; a "
                              "file selected the other way is recomputed, not reused.")
-    parser.add_argument('--registration', nargs='?', default=REGISTRATION_RULES[0],
-                        choices=list(REGISTRATION_RULES),
-                        help="which lags a kept roi's spatial profile is read at for "
-                             "its centroid. 'first_lobe' (default): the single lag "
-                             "where its first lobe peaks -- the direct response, "
-                             "whose footprint is the receptive-field centre. "
-                             "'first_lobe_matched': every lag inside the first lobe, "
-                             "weighted by the roi's own pooled time course there "
-                             "(unit norm, so the profile keeps one slice's noise sd "
-                             "while the signal adds up); same lobe, more data. "
-                             "'energy_peak': the single lag of greatest summed "
-                             "squared filter, the pre-2026-11-17 rule, which lands "
-                             "on whichever lobe is biggest after the stimulus hold "
-                             "has smeared them. Rois the null did not keep use the "
-                             "energy peak under every rule. Every run prints the "
-                             "split-half registration jitter under all three, so "
-                             "the choice can be made on the number. Recorded with "
-                             "the saved STRFs; another rule recomputes.")
     parser.add_argument('--force_reanalysis', action='store_true',
                         help='recompute even when this file already holds STRFs for '
                              'this tag, overwriting them. Without it a run that finds '
@@ -709,7 +719,7 @@ if __name__ == '__main__':
     bleach_mode = {'auto': 'auto', 'on': True, 'off': False}[str(args.bleach).lower()]
     null_shifts = int(args.null_shifts)
     null_method = str(args.null_method)
-    registration_rule = str(args.registration)
+    peak_window_s = float(args.peak_window)
     filter_length_spec = str(args.filter_length)
     lag_dt_s = float(args.lag_dt)
     monitor_hz_override = args.monitor_hz
@@ -814,7 +824,7 @@ if __name__ == '__main__':
         strf_results, reused, _why = load_saved_strfs(
             experiment_file_path, strf_group, filter_length_spec,
             filter_length_by_ch, dff, args.deconvolve, float(args.lag_dt),
-            null_method, select_ch, registration_rule)
+            null_method, select_ch, peak_window_s)
         print(_why)
 
     print('settings : filter_length={}  dff={}  deconvolve={}  '
@@ -824,9 +834,12 @@ if __name__ == '__main__':
               dff, args.deconvolve, null_shifts, null_method,
               ('each channel on itself' if select_ch is None
                else 'on {}, inherited by the rest'.format(select_ch)),
-              args.bleach, rig, POLARITY_RULE, registration_rule))
+              args.bleach, rig, POLARITY_RULE, REGISTRATION_RULE))
     print('           lag_dt {:.5f}s ({:g} Hz)'.format(
         lag_dt_s, (1.0 / lag_dt_s) if lag_dt_s > 0 else float('nan')))
+    print('           peak window {}'.format(
+        '{:g}s of lag, rois and null alike'.format(peak_window_s)
+        if peak_window_s > 0 else 'the whole filter'))
 
     # ── fly metadata and photodiode channel ──────────────────────────────────
     series_num = list(map(str, plug.getSeriesNumbers(experiment_file_path)))
@@ -1108,6 +1121,13 @@ if __name__ == '__main__':
                 # family (same geometry, same hold_tau) and runs no null of
                 # its own; its signs are still its own. See the module
                 # docstring, WHICH ROIS ARE KEPT.
+                # Lags searched for the peak, on the rois and on every null
+                # draw alike; the noise sd still comes from the late lags of
+                # the full axis. See nullcal.DEFAULT_PEAK_WINDOW_S.
+                _pl = nullcal.peak_lags_for(
+                    peak_window_s,
+                    float(t_lag[1] - t_lag[0]) if len(t_lag) > 1 else lag_dt_s,
+                    strf_full.shape[-1])
                 _inherit_from = (select_ch if select_ch is not None and ch != select_ch
                                  else None)
                 if null_shifts > 0 and _inherit_from is not None:
@@ -1122,7 +1142,8 @@ if __name__ == '__main__':
                     else:
                         keep_rois = np.asarray(_src['keep_rois'], dtype=int)
                         kept_signs = np.asarray(nullcal.peak_signs(
-                            strf_full[:, vis_mask, :], keep_rois), dtype=int)
+                            strf_full[:, vis_mask, :], keep_rois, peak_lags=_pl),
+                            dtype=int)
                         null_select_info['from_method'] = str(
                             _src.get('null_select_info', {}).get('method_used', '?'))
                         print('    kept {} of {} rois: the set {} selected for this '
@@ -1149,16 +1170,19 @@ if __name__ == '__main__':
                     _t1 = time.perf_counter()
                     try:
                         _cal = nullcal.calibrate(
-                            _shifted, nullcal.shifts_for(_dur, filter_length_s, null_shifts))
+                            _shifted, nullcal.shifts_for(_dur, filter_length_s, null_shifts),
+                            peak_lags=_pl)
                         _vis_strf = strf_full[:, vis_mask, :]
-                        _z = nullcal.peak_z(_vis_strf)
+                        _z = nullcal.peak_z(_vis_strf, peak_lags=_pl)
                         null_p = np.full(n_roi, np.nan)
                         _ok = np.isfinite(_z)
                         null_p[_ok] = nullcal.pvalues(_z[_ok], _cal['null'])[0]
                         null_threshold = _cal['threshold']
                         print('    [timing] null ({} shifts) took {:.2f}s; '
-                              'threshold {:.2f}'.format(
-                                  null_shifts, time.perf_counter() - _t1, null_threshold))
+                              'threshold {:.2f}; peak searched over {} of {} lags'.format(
+                                  null_shifts, time.perf_counter() - _t1, null_threshold,
+                                  strf_full.shape[-1] if _pl is None else _pl,
+                                  strf_full.shape[-1]))
 
                         # Turn the null into an actual kept set. Default is FDR
                         # at q=0.05, the rule analyze_data_trf_fullfield.py uses:
@@ -1188,14 +1212,14 @@ if __name__ == '__main__':
                 # rather than the extremum -- see nullcal, section POLARITY,
                 # for the rule and the measurements behind it. kept_signs is
                 # replaced; the extremum signs travel alongside for comparison.
-                # Read from strf_dec, the array the centroid slice is taken
-                # from, so the lag it returns indexes the same axis (the same
-                # array as strf_full unless --deconvolve, which is off by
-                # default and does not work on this data anyway).
+                # Read from strf_z: strf_dec, the array the centroid is taken
+                # from, over each roi's own noise sd -- so the lag it returns
+                # indexes the same axis, and each roi weighs in the family
+                # template by its SNR (see first_lobe_polarity).
                 polarity = None
                 if keep_rois is not None and len(keep_rois):
                     polarity = nullcal.first_lobe_polarity(
-                        strf_dec[:, vis_mask, :], keep_rois)
+                        strf_z[:, vis_mask, :], keep_rois)
                     _ext = np.asarray(polarity['extremum_signs'], dtype=int)
                     kept_signs = np.asarray(polarity['signs'], dtype=int)
                     _tl = polarity['template_lobe']
@@ -1209,7 +1233,7 @@ if __name__ == '__main__':
                         _src = np.asarray(polarity['lag_source']).astype(str)
                         print('        template first lobe peaks {:.0f} ms (run '
                               '{:.0f}-{:.0f} ms); |cos| to template median {:.2f}, '
-                              '{} rois below 0.3; registration lag from own lobe '
+                              '{} rois below 0.3; first-lobe lag from own lobe '
                               'for {} rois, from the template for {}'.format(
                                   t_lag[_tl[2]] * 1000, t_lag[_tl[0]] * 1000,
                                   t_lag[min(_tl[1], len(t_lag) - 1)] * 1000,
@@ -1311,42 +1335,57 @@ if __name__ == '__main__':
                                   int(np.isfinite(_nc).sum()), len(_rel_sel)))
 
                 pk = np.array([peak_lag(strf_dec[r][vis_mask]) for r in range(n_roi)])
-                # Kept rois are registered at their FIRST-LOBE lag (polarity
-                # block above); the energy peak stays for the rest, which are
-                # never registered. The split-half jitter below therefore
-                # measures the registration this rule actually produces.
+                # For kept rois peak_lag_ind is the FIRST-LOBE lag (polarity
+                # block above); the energy peak stays for the rest. It is a
+                # description of the filter's timing -- the centroid below is
+                # not read at this one lag but across all of them.
                 pk_energy = pk.copy()
                 if polarity is not None:
                     pk[np.asarray(keep_rois, dtype=int)] = np.asarray(
                         polarity['lag_ind'], dtype=int)
 
-                # WHICH LAGS THE SPATIAL PROFILE IS READ AT (--registration).
-                # One weight vector over the lag axis per roi; the profile is
-                # the filter times it. 'first_lobe' is one lag, the first-lobe
-                # peak; 'energy_peak' one lag, the old rule; 'first_lobe_matched'
-                # pools the lags inside the first lobe with the roi's own pooled
-                # trace as weights, unit norm so the profile keeps a single
-                # slice's noise sd (centroid_1d's noise cut still applies) while
-                # the signal adds across lags. Rois the null did not keep have no
-                # first lobe and use the energy peak under every rule.
+                # THE SPATIAL PROFILE THAT IS CENTROIDED: the filter projected
+                # onto the family template across lags, not one lag's slice.
+                # For each cell, its own time course times the template, summed
+                # over the template's support. Where a cell's time course has
+                # the family's shape every lag adds with the same sign -- the
+                # rebound reinforces the first lobe instead of competing with
+                # it -- while noise adds in quadrature, so this is the
+                # highest-SNR profile a separable filter allows and there is no
+                # lag to choose. Why not a slice: at the first-lobe peak a roi
+                # whose rebound dominates has only a sliver left after the
+                # hold's smear (fly_022, tau 0.4: z 2-4 at 33 ms against 6-9 at
+                # the rebound) and its half-data centroids landed 70-110 deg
+                # apart; at the energy peak a weak roi can land on a noise lag
+                # anywhere on the axis. The weights are unit norm, so the
+                # profile keeps one slice's nominal noise sd and centroid_1d's
+                # noise cut applies unchanged; they are the same for every
+                # cell, so a roi whose kinetics differ from the family's loses
+                # efficiency, not position. Assumes only that each cell's time
+                # course is a scaled copy of the template; a surround with
+                # other kinetics comes out attenuated, which the centroid --
+                # the dominant-sign lobe -- never used anyway. A kept roi in a
+                # family too small for a template uses its own pooled trace
+                # over its own first lobe; a roi the null did not keep has
+                # neither and uses its energy-peak slice.
                 _pol_idx = ({int(_r): _i for _i, _r in enumerate(keep_rois)}
                             if polarity is not None else {})
+                _tw = (nullcal.template_lag_weights(polarity['template'])
+                       if polarity is not None else None)
 
-                def _lag_weights(rule, r):
-                    lw = np.zeros(strf_dec.shape[-1])
+                def _lag_weights(r):
                     i = _pol_idx.get(int(r))
-                    if rule == 'energy_peak' or i is None:
-                        lw[pk_energy[r]] = 1.0
-                    elif rule == 'first_lobe':
-                        lw[pk[r]] = 1.0
-                    else:
+                    if i is not None and _tw is not None:
+                        return _tw
+                    lw = np.zeros(strf_dec.shape[-1])
+                    if i is not None:
                         a, b = polarity['runs'][i]
-                        seg = polarity['traces'][i, a:b]
+                        seg = np.abs(polarity['traces'][i, a:b])
                         nrm = float(np.sqrt(np.sum(seg ** 2)))
                         if nrm > 0:
-                            lw[a:b] = np.abs(seg) / nrm
-                        else:
-                            lw[pk[r]] = 1.0
+                            lw[a:b] = seg / nrm
+                            return lw
+                    lw[pk_energy[r]] = 1.0
                     return lw
 
                 def _centroid_profile(block, lw):
@@ -1377,7 +1416,7 @@ if __name__ == '__main__':
                 spreads = np.full(n_roi, np.nan)
                 n_kept = np.zeros(n_roi, dtype=int)
                 for r in range(n_roi):
-                    lw = _lag_weights(registration_rule, r)
+                    lw = _lag_weights(r)
                     lobe = _centroid_profile(strf_dec[r], lw)
                     if lobe is None:
                         continue
@@ -1413,32 +1452,10 @@ if __name__ == '__main__':
                                 noise_sd=_nsd)
 
                 jitter_deg, _n_pairs = _fold_jitter(centers_fold)
-                jitter_by_rule = {}
                 if np.isfinite(jitter_deg):
                     print('    registration jitter {:.2f} deg (from {} split-half '
-                          'centroid pairs; --registration {})'.format(
-                              jitter_deg, _n_pairs, registration_rule))
-                    # The same measurement under the other rules, so the choice
-                    # is made on the number rather than on the argument for it.
-                    # Cheap: the folds exist and this is a few hundred centroids.
-                    if folds is not None and polarity is not None:
-                        for _rule in REGISTRATION_RULES:
-                            if _rule == registration_rule:
-                                jitter_by_rule[_rule] = jitter_deg
-                                continue
-                            _cf = [np.full(n_roi, np.nan), np.full(n_roi, np.nan)]
-                            for r in np.asarray(_use, dtype=int):
-                                _lw = _lag_weights(_rule, r)
-                                _nsd = z_info['sd'][r] if 'sd' in z_info else None
-                                for _fi, _fa in enumerate(folds):
-                                    _lf = _centroid_profile(_fa[r], _lw)
-                                    if _lf is not None:
-                                        _cf[_fi][r] = centroid_1d(
-                                            _lf, offsets, meta['mode'],
-                                            cell_widths_deg=widths, noise_sd=_nsd)[0]
-                            jitter_by_rule[_rule] = _fold_jitter(_cf)[0]
-                        print('        jitter by rule: ' + '  '.join(
-                            '{} {:.2f}'.format(k, v) for k, v in jitter_by_rule.items()))
+                          'centroid pairs, matched profile)'.format(
+                              jitter_deg, _n_pairs))
 
                 strf_results[sn, ch, glabel] = {
                     'strf_raw': strf_full, 'strf': strf_dec, 'strf_z': strf_z,
@@ -1449,7 +1466,6 @@ if __name__ == '__main__':
                     'center_screen_deg': centers_screen,
                     'center_fold_deg': np.vstack(centers_fold),
                     'jitter_deg': jitter_deg,
-                    'jitter_by_rule': jitter_by_rule,
                     'center_defined': bool(center_defined),
                     'axis_label': screen_axis_label(meta, sampling),
                     'center_az_deg': float(sampling.get('center_az_deg', 0.0)),
@@ -1493,7 +1509,9 @@ if __name__ == '__main__':
             g.attrs['roi_selection_channel'] = ('each' if select_ch is None
                                                 else select_ch)
             g.attrs['polarity_rule'] = POLARITY_RULE
-            g.attrs['registration_rule'] = registration_rule
+            g.attrs['registration_rule'] = REGISTRATION_RULE
+            g.attrs['peak_window_s'] = (float(peak_window_s)
+                                        if peak_window_s > 0 else 0.0)
 
             for (sn, ch, glabel), res in strf_results.items():
                 sg = g.require_group('{}/{}/geom_{}'.format(sn, ch, glabel))
@@ -1517,18 +1535,15 @@ if __name__ == '__main__':
                 sg['peak_lag_ind'].attrs['rule'] = (
                     'kept rois: peak of the FIRST lobe (first_lobe_lag_ind); '
                     'other rois: lag of greatest summed squared filter over '
-                    'the visible cells. The centroid is read at the lags the '
-                    'group attr registration_rule names, which is this lag only '
-                    'for first_lobe')
+                    'the visible cells. A timing descriptor only: the centroid '
+                    'of a kept roi is read from the filter projected onto the '
+                    'family template across lags (group attr registration_rule)')
                 sg.create_dataset('positions_deg', data=res['positions_deg'])
                 sg.create_dataset('screen_offset_deg', data=res['screen_offset_deg'])
                 sg.create_dataset('center_screen_deg', data=res['center_screen_deg'])
                 sg.create_dataset('center_fold_deg', data=res['center_fold_deg'])
                 sg.attrs['registration_jitter_deg'] = (
                     res['jitter_deg'] if np.isfinite(res['jitter_deg']) else -1.0)
-                for _k, _v in res.get('jitter_by_rule', {}).items():
-                    sg.attrs['registration_jitter_deg_' + _k] = (
-                        _v if np.isfinite(_v) else -1.0)
                 sg.attrs['screen_frame_defined'] = res['center_defined']
                 sg.attrs['screen_axis_label'] = res['axis_label']
                 sg.attrs['center_az_deg'] = res['center_az_deg']
@@ -2263,7 +2278,7 @@ if __name__ == '__main__':
                 ax.set_ylim(-1.05 * lim, 1.05 * lim)
                 ax.set_xlabel(axis_label)
                 ax.set_ylabel('filter (cell units)')
-                ax.set_title('{} cells @ registration lag {:.2f}s  ({} of {} lit)'.format(
+                ax.set_title('{} cells @ lag {:.2f}s  ({} of {} lit)'.format(
                     meta['mode'], lag_s, _n_lit, vis_mask.size), fontsize=15)
 
                 ax = axes[1]
@@ -2275,7 +2290,7 @@ if __name__ == '__main__':
                         continue
                     ax.plot(t_lag, strf[r, c_i], lw=1.0, alpha=0.75)
                     _cmax = max(_cmax, float(np.nanmax(np.abs(strf[r, c_i]))))
-                # The trace the polarity and the registration lag were read
+                # The trace the polarity and the first-lobe lag were read
                 # from: the receptive-field cells pooled with non-negative
                 # weights (nullcal.lobe_trace), scaled to the strongest cell so
                 # it shares the axis. The dotted line marks its first lobe.
