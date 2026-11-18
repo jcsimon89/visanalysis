@@ -1397,6 +1397,38 @@ if __name__ == '__main__':
                     sign = np.sign(w[np.argmax(np.abs(w))])
                     return np.clip(w * sign, 0.0, None)
 
+                _noise_cells = ~vis_mask
+                _noise_ratio = []
+
+                def _profile_noise(block, lw, nominal):
+                    # THE NOISE OF THE PROFILE, not of one filter value. The
+                    # nominal sd is one cell at one lag. A profile summed over
+                    # lags with unit-norm weights keeps that sd only if the
+                    # noise were independent across lags, and it is not: the
+                    # stimulus hold puts its autocorrelation on every STA
+                    # column, and the template's lobes are long runs of
+                    # same-sign weights, so neighbouring lags add their shared
+                    # noise in step. Measured on fly_022 the profile's real sd
+                    # was 4.4-4.9x nominal at hold_tau 0.4 and about 2x at 0.04,
+                    # and two thirds of pure-noise cells cleared a '2 sd' cut
+                    # at 0.4 -- the cut was admitting any noise cell that
+                    # touched the receptive field. So measure it: the same
+                    # weights applied to the never-displayed cells give profile
+                    # values that are noise with exactly these statistics, no
+                    # model of the correlation needed. A one-lag profile IS a
+                    # filter value and keeps the nominal sd, which is estimated
+                    # from far more samples; so does a family with too few
+                    # never-displayed cells to estimate anything from.
+                    if (nominal is None or np.count_nonzero(lw) <= 1
+                            or int(_noise_cells.sum()) < 3):
+                        return nominal
+                    v = block[_noise_cells] @ lw
+                    v = v[np.isfinite(v)]
+                    if v.size < 3:
+                        return nominal
+                    sd = float(np.sqrt(np.mean(v ** 2)))
+                    return sd if sd > 0 else nominal
+
                 def _fold_jitter(cf):
                     # sd of the difference between two half-data centroids is
                     # sqrt(2) x a half's error; the full-data estimate uses
@@ -1422,8 +1454,13 @@ if __name__ == '__main__':
                         continue
                     # Noise-relative inclusion, using THIS roi's own noise: a
                     # peak-relative cut snaps the estimate to a cell center
-                    # whenever the lobe is narrow. See centroid_1d.
-                    _nsd = z_info['sd'][r] if 'sd' in z_info else None
+                    # whenever the lobe is narrow. See centroid_1d. The noise
+                    # is that of the profile being centroided (_profile_noise).
+                    _nsd_nom = z_info['sd'][r] if 'sd' in z_info else None
+                    _nsd = _profile_noise(strf_dec[r], lw, _nsd_nom)
+                    if (_nsd_nom and _nsd is not None and _nsd != _nsd_nom
+                            and int(r) in _pol_idx):
+                        _noise_ratio.append(_nsd / _nsd_nom)
                     centers[r], spreads[r], n_kept[r] = centroid_1d(
                         lobe, positions, meta['mode'], cell_widths_deg=widths,
                         noise_sd=_nsd)
@@ -1447,11 +1484,18 @@ if __name__ == '__main__':
                             _lf = _centroid_profile(_fa[r], lw)
                             if _lf is None:
                                 continue
+                            # each half's own profile noise: half the data
+                            # is noisier, and its cut should say so
                             centers_fold[_fi][r], _s2, _n2 = centroid_1d(
                                 _lf, offsets, meta['mode'], cell_widths_deg=widths,
-                                noise_sd=_nsd)
+                                noise_sd=_profile_noise(_fa[r], lw, _nsd))
 
                 jitter_deg, _n_pairs = _fold_jitter(centers_fold)
+                if _noise_ratio:
+                    print('    matched-profile noise is {:.2f}x the single-value sd '
+                          '(median over {} kept rois, from the never-displayed '
+                          'cells); the centroid cut uses it'.format(
+                              float(np.median(_noise_ratio)), len(_noise_ratio)))
                 if np.isfinite(jitter_deg):
                     print('    registration jitter {:.2f} deg (from {} split-half '
                           'centroid pairs, matched profile)'.format(
