@@ -588,12 +588,17 @@ if __name__ == '__main__':
                         help='lag window, in seconds from lag 0, searched for the '
                              'peak |z| -- on the rois and on every null draw alike; '
                              '0 searches the whole filter. See util.nullcal.')
-    parser.add_argument('--separability', nargs='?', default='True',
-                        help="'True' (default) tests every kept roi for space-time "
-                             "separability across the two trial folds: the "
-                             "cross-validated rank-1 fraction and a second-component "
-                             "test against the shift null. Raw STA, visible cells, "
-                             "the peak window. 'False' skips it. See util.separability.")
+    parser.add_argument('--separability', nargs='?', default='False',
+                        help="'True' tests every kept roi for space-time separability "
+                             "across the two trial folds: the cross-validated rank-1 "
+                             "fraction and a second-component test against the shift "
+                             "null. Raw STA, visible cells, the peak window. 'False' "
+                             "(default) skips the per-roi test: separability is a "
+                             "question for GROUP data, where the second component is "
+                             "pooled across rois and flies, not for one roi of one fly, "
+                             "whose per-roi call is noise-limited at the SNR these "
+                             "recordings reach. Nothing per fold is computed or saved "
+                             "unless the test runs. See util.separability.")
     parser.add_argument('--bleach', nargs='?', default='auto',
                         help="bleach correction on raw F: 'auto' (default), 'on', 'off'")
     parser.add_argument('--filter_length', nargs='?', default='10.0',
@@ -1303,7 +1308,11 @@ if __name__ == '__main__':
                 # and ran no null of its own gets the fractions only.
                 sep, fold_blocks = None, None
                 _n_win = int(_pl) if _pl is not None else int(strf_full.shape[-1])
-                if folds is not None:
+                # The per-fold blocks are computed and saved only WITH the
+                # test: a split-half analysis works from half the data, and
+                # whether to pay that is decided at group-analysis time, from
+                # the full STAs saved here, not ahead of it for every fly.
+                if do_sep and folds is not None:
                     fold_blocks = np.stack([
                         separability.window(folds[0][:, vis_mask, :], _n_win),
                         separability.window(folds[1][:, vis_mask, :], _n_win)]
