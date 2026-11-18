@@ -2462,7 +2462,11 @@ if __name__ == '__main__':
             # Plotted in the SCREEN frame throughout: 0 is the middle of the
             # display, and for wedges the visible cells are contiguous in it.
             positions, pk = res['screen_offset_deg'], res['peak_lag_ind']
-            centers_plot = res['center_screen_deg']
+            # The centre marked on every per-roi panel is the one the
+            # population analysis registers at: the selection channel's for
+            # an inherited channel (see _centre_res), so the figure shows the
+            # position the roi is actually averaged at, not a second one.
+            centers_plot = _centre_res(sn, ch, glabel, res)[0]['center_screen_deg']
             vis_mask = np.zeros(strf.shape[1], dtype=bool)
             vis_mask[res['visible_cells']] = True
             meta = res['meta']
