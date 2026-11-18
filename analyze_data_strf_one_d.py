@@ -128,7 +128,7 @@ from visanalysis.util.one_d_strf import (
     peak_lag, independent_samples, deconvolve_octaves, zscore_from_noise_cells,
     trial_reliability,
 )
-from visanalysis.util import bleach, nullcal
+from visanalysis.util import bleach, nullcal, separability
 from visanalysis.util.frame_timing import reconstruct_displayed_frame_indices
 from visanalysis.util.strf_plot import _tighten, apply_figure_style
 from visanalysis.util.one_d_group import (
@@ -527,7 +527,15 @@ def load_saved_strfs(path, group, filter_length_spec, filter_length_by_ch,
                         'center_az_deg': float(sg.attrs.get('center_az_deg', 0.0)),
                         'center_el_deg': float(sg.attrs.get('center_el_deg', 0.0)),
                         'trial_rel': None,
+                        'sep': None,
+                        'sep_window_lags': int(sg['strf'].shape[-1]),
                     }
+                    if 'separability' in sg:
+                        _sg = sg['separability']
+                        res['sep'] = {k: _sg[k][()] for k in _sg}
+                        res['sep']['n_tested'] = int(_sg.attrs.get('n_tested', 0))
+                        res['sep_window_lags'] = int(_sg.attrs.get(
+                            'window_lags', res['sep_window_lags']))
                     if 'trial_reliability' in sg:
                         grps = []
                         for gk in sorted(sg['trial_reliability']):
@@ -580,6 +588,12 @@ if __name__ == '__main__':
                         help='lag window, in seconds from lag 0, searched for the '
                              'peak |z| -- on the rois and on every null draw alike; '
                              '0 searches the whole filter. See util.nullcal.')
+    parser.add_argument('--separability', nargs='?', default='True',
+                        help="'True' (default) tests every kept roi for space-time "
+                             "separability across the two trial folds: the "
+                             "cross-validated rank-1 fraction and a second-component "
+                             "test against the shift null. Raw STA, visible cells, "
+                             "the peak window. 'False' skips it. See util.separability.")
     parser.add_argument('--bleach', nargs='?', default='auto',
                         help="bleach correction on raw F: 'auto' (default), 'on', 'off'")
     parser.add_argument('--filter_length', nargs='?', default='10.0',
@@ -720,6 +734,7 @@ if __name__ == '__main__':
     null_shifts = int(args.null_shifts)
     null_method = str(args.null_method)
     peak_window_s = float(args.peak_window)
+    do_sep = str(args.separability) == 'True'
     filter_length_spec = str(args.filter_length)
     lag_dt_s = float(args.lag_dt)
     monitor_hz_override = args.monitor_hz
@@ -1124,6 +1139,7 @@ if __name__ == '__main__':
                 # Lags searched for the peak, on the rois and on every null
                 # draw alike; the noise sd still comes from the late lags of
                 # the full axis. See nullcal.DEFAULT_PEAK_WINDOW_S.
+                _sep_null, _sep_va, _sep_vb = None, None, None
                 _pl = nullcal.peak_lags_for(
                     peak_window_s,
                     float(t_lag[1] - t_lag[0]) if len(t_lag) > 1 else lag_dt_s,
@@ -1169,9 +1185,21 @@ if __name__ == '__main__':
                     _dur = trials[0]['stim_cells'].shape[0] * _sdt
                     _t1 = time.perf_counter()
                     try:
+                        # The separability test rides on the same shifts:
+                        # its statistic is evaluated on every shifted filter,
+                        # with the test vectors (each fold's second spatial
+                        # profile) computed once here. See util.separability.
+                        _sep_extra = None
+                        if do_sep and folds is not None:
+                            _sep_va, _sep_vb = separability.test_vectors(
+                                folds[0][:, vis_mask, :], folds[1][:, vis_mask, :],
+                                strf_full[:, vis_mask, :], _pl)
+                            _sep_extra = separability.extra_stats(
+                                _sep_va, _sep_vb, peak_lags=_pl)
                         _cal = nullcal.calibrate(
                             _shifted, nullcal.shifts_for(_dur, filter_length_s, null_shifts),
-                            peak_lags=_pl)
+                            peak_lags=_pl, extra_stats=_sep_extra)
+                        _sep_null = _cal.get('null_extra') or None
                         _vis_strf = strf_full[:, vis_mask, :]
                         _z = nullcal.peak_z(_vis_strf, peak_lags=_pl)
                         null_p = np.full(n_roi, np.nan)
@@ -1267,6 +1295,49 @@ if __name__ == '__main__':
                     if mixed_polarity:
                         print('        NOTE: genuinely MIXED in polarity; '
                               'split them rather than averaging together.')
+
+                # SPACE-TIME SEPARABILITY of the kept rois, judged across the
+                # two trial folds (util.separability): raw STA, visible cells,
+                # the null's lag window. The second-component test needs the
+                # null's extra draws, so a channel that inherited its kept set
+                # and ran no null of its own gets the fractions only.
+                sep, fold_blocks = None, None
+                _n_win = int(_pl) if _pl is not None else int(strf_full.shape[-1])
+                if folds is not None:
+                    fold_blocks = np.stack([
+                        separability.window(folds[0][:, vis_mask, :], _n_win),
+                        separability.window(folds[1][:, vis_mask, :], _n_win)]
+                    ).astype(np.float32)
+                if (do_sep and folds is not None and keep_rois is not None
+                        and len(keep_rois)):
+                    _t1 = time.perf_counter()
+                    sep = separability.analyze(
+                        folds[0][:, vis_mask, :], folds[1][:, vis_mask, :],
+                        strf_full[:, vis_mask, :], keep_rois, _pl,
+                        v_a=_sep_va, v_b=_sep_vb, null=_sep_null)
+                    _f = sep['frac'][keep_rois]
+                    _sz = sep['second_z'][keep_rois]
+                    _ins = sep['inseparable'][keep_rois]
+                    _verdict = ('second-component test not run (no null on this '
+                                'channel)' if _sep_null is None else
+                                '{} of {} inseparable (second-component peak z '
+                                'passes BH q=0.05; null 95th pct {:.2f})'.format(
+                                    int((_ins == 1).sum()), len(keep_rois),
+                                    float(np.percentile(_sep_null['sep_second'], 95))
+                                    if np.asarray(_sep_null.get('sep_second', [])).size
+                                    else float('nan')))
+                    print('    separability over {} kept rois: rank-1 fraction median '
+                          '{:.2f} (IQR {:.2f}-{:.2f}), rank-2 increment median {:.3f}; '
+                          'second-component peak z median {:.1f} (90th {:.1f}); {}  '
+                          '[{:.2f}s]'.format(
+                              len(keep_rois), float(np.nanmedian(_f[:, 0])),
+                              float(np.nanpercentile(_f[:, 0], 25)),
+                              float(np.nanpercentile(_f[:, 0], 75)),
+                              float(np.nanmedian(_f[:, 1] - _f[:, 0])),
+                              float(np.nanmedian(_sz)), float(np.nanpercentile(_sz, 90)),
+                              _verdict, time.perf_counter() - _t1))
+                elif do_sep and folds is None:
+                    print('    separability skipped: a single trial, no folds')
 
                 dof = independent_samples(n_valid, float(meta['hold_tau']), sample_dt)
                 n_indep = float(np.median(dof))
@@ -1532,6 +1603,8 @@ if __name__ == '__main__':
                     'minority_fraction': (minority_frac
                                           if keep_rois is not None else 0.0),
                     'trial_rel': trial_rel,
+                    'sep': sep, 'fold_blocks': fold_blocks,
+                    'sep_window_lags': _n_win,
                 }
 
     # ── save ─────────────────────────────────────────────────────────────────
@@ -1599,6 +1672,42 @@ if __name__ == '__main__':
                 sg.create_dataset('spread_deg', data=res['spread_deg'])
                 sg.create_dataset('n_cells_in_centroid', data=res['n_kept_cells'])
                 sg.create_dataset('dof', data=res['dof'])
+                # Separability (util.separability), kept rois only, NaN
+                # elsewhere; cells are the visible ones in visible_cells order
+                # and lags the leading window_lags of t_lag.
+                _sep = res.get('sep')
+                if _sep is not None:
+                    _g = sg.create_group('separability')
+                    for _k in ('frac', 'cv_corr', 'second_z', 'second_p', 'second_z_dir',
+                               'second_p_dir', 'inseparable', 'second_trace',
+                               'test_vector', 'energy_frac', 'profile', 'time_course'):
+                        _g.create_dataset(_k, data=np.asarray(_sep[_k]))
+                    _g.attrs['bh_cutoff'] = float(_sep['bh_cutoff'])
+                    _g.attrs['n_tested'] = int(_sep['n_tested'])
+                    _g.attrs['window_lags'] = int(res['sep_window_lags'])
+                    _g.attrs['cells'] = 'visible cells, visible_cells order'
+                    _g.attrs['frac'] = ('cross-validated <A_k, B>/<A, B> for rank k = 1, 2, '
+                                        'averaged over both fold directions; raw STA; '
+                                        'biased low below peak z ~7')
+                    _g.attrs['second'] = (
+                        'second-component test: each fold\'s second spatial profile '
+                        'with the full block\'s rank-1 profile projected out '
+                        '(test_vector, rows A and B) applied to the OTHER fold, the '
+                        'two traces summed sign-aligned (second_trace); second_z = '
+                        'its peak |z| (late-lag noise, peak window), second_p against '
+                        'the shift null of the same statistic; inseparable = 1 where '
+                        'BH q=0.05 passes, 0 tested and not, -1 untested. '
+                        'second_z_dir / second_p_dir are the two directions alone.')
+                    _g.attrs['null'] = (
+                        'shift null shared with roi selection'
+                        if np.isfinite(np.asarray(_sep['second_p'])).any()
+                        else 'none: no null ran on this channel (inherited kept set)')
+                if res.get('fold_blocks') is not None:
+                    sg.create_dataset('fold_blocks', data=res['fold_blocks'],
+                                      compression='gzip')
+                    sg['fold_blocks'].attrs['layout'] = (
+                        '(fold, roi, visible cell, window lag): raw STA of each trial '
+                        'fold over the separability window, float32')
                 meta = res['meta']
                 for k in ('mode', 'cell_width_deg', 'phase_deg', 'pole_az_deg',
                          'pole_el_deg', 'hold_tau', 'p', 'seed'):
@@ -2176,6 +2285,136 @@ if __name__ == '__main__':
             if save_figs:
                 fig.savefig(os.path.join(
                     figs_dir, 'strf_one_d_KEPT_MAP_{}_{}_{}.pdf'.format(
+                        sn, ch, glabel)))
+            if not show_figs:
+                plt.close(fig)
+
+        # ── SEPARABILITY, per family: a summary and a grid of example rois ──
+        # See util.separability. The fraction is biased low at low SNR, so
+        # the summary draws it against each roi's peak z; the yes/no is the
+        # residual test. The grid overlays every driven cell's own time
+        # course (normalised, oriented by the rank-1 profile) on the rank-1
+        # time course: a separable roi collapses onto one curve.
+        for (sn, ch, glabel), res in strf_results.items():
+            _sep = res.get('sep')
+            _keep = res.get('keep_rois')
+            if _sep is None or _keep is None or not len(_keep):
+                continue
+            _keep = np.asarray(_keep, dtype=int)
+            _vis = np.asarray(res['visible_cells'], dtype=int)
+            _tl = np.asarray(res['t_lag'])
+            _nw = int(res.get('sep_window_lags', len(_tl)))
+            _frac = np.asarray(_sep['frac'], dtype=float)
+            _f1 = _frac[_keep, 0]
+            _inc = _frac[_keep, 1] - _f1
+            _rz = np.asarray(_sep['second_z'], dtype=float)[_keep]
+            _flag = np.asarray(_sep['inseparable'])[_keep]
+            _pz = np.nanmax(np.abs(np.asarray(res['strf_z'])[_keep][:, _vis, :_nw]),
+                            axis=(1, 2))
+            _tested = bool(np.isfinite(np.asarray(_sep['second_p'], dtype=float)).any())
+            _ins = _flag == 1
+            _col = np.where(_ins, '#d62728', '#1f77b4')
+
+            fig, axes = plt.subplots(1, 3, figsize=(15.5, 4.6), constrained_layout=True)
+            ax = axes[0]
+            _bins = np.linspace(0, 1.1, 23)
+            ax.hist([_f1[~_ins], _f1[_ins]], bins=_bins, stacked=True,
+                    color=['#1f77b4', '#d62728'],
+                    label=['separable / untested', 'inseparable (second-component test)'])
+            ax.set_xlabel('cross-validated rank-1 fraction')
+            ax.set_ylabel('kept rois')
+            ax.legend(fontsize=10, loc='upper left')
+            ax.set_title('one profile x one time course accounts for', fontsize=12)
+            ax = axes[1]
+            ax.scatter(_pz, _f1, s=26, c=_col, edgecolors='k', linewidths=0.4)
+            ax.set_xlabel('roi peak |z| (window)')
+            ax.set_ylabel('rank-1 fraction')
+            ax.set_ylim(min(0.0, float(np.nanmin(_f1)) if np.isfinite(_f1).any() else 0.0),
+                        1.15)
+            ax.axhline(1.0, color='0.6', lw=0.8, ls=':')
+            ax.set_title('fraction is biased low at low z: read against z', fontsize=12)
+            ax = axes[2]
+            ax.scatter(_rz, _inc, s=26, c=_col, edgecolors='k', linewidths=0.4)
+            ax.set_xlabel('second-component peak |z| (cross-fold, summed)')
+            ax.set_ylabel('rank-2 increment of the fraction')
+            ax.axhline(0.0, color='0.6', lw=0.8, ls=':')
+            ax.axvline(float(np.nanpercentile(_rz, 50)), color='0.85', lw=0.6)
+            ax.set_title('second component: energy vs significance', fontsize=12)
+            fig.suptitle('{} {} {}\nseparability over {} kept rois: {}'.format(
+                sn, ch, glabel, len(_keep),
+                ('{} inseparable by the second-component test (BH q=0.05)'.format(
+                    int(_ins.sum())) if _tested
+                 else 'second-component test not run on this channel (no null)')),
+                fontsize=13)
+            if save_figs:
+                fig.savefig(os.path.join(
+                    figs_dir, 'strf_one_d_SEPARABILITY_{}_{}_{}.pdf'.format(
+                        sn, ch, glabel)))
+            if not show_figs:
+                plt.close(fig)
+
+            # Example rois: every inseparable one (strongest residual first,
+            # up to 8) plus the highest-z separable ones (up to 4).
+            _ord_ins = _keep[_ins][np.argsort(-_rz[_ins])][:8]
+            _ord_sep = _keep[~_ins][np.argsort(-_pz[~_ins])][:4]
+            _show = list(_ord_ins) + list(_ord_sep)
+            if not _show:
+                continue
+            _ncol = 3 if len(_show) > 4 else min(len(_show), 4)
+            _nrow = int(np.ceil(len(_show) / float(_ncol)))
+            fig, axes = plt.subplots(_nrow, _ncol, squeeze=False,
+                                     figsize=(4.6 * _ncol, 3.4 * _nrow + 0.8),
+                                     constrained_layout=True)
+            _off = np.asarray(res['screen_offset_deg'], dtype=float)[_vis]
+            _cmap = plt.get_cmap('viridis')
+            _lo, _hi = float(np.nanmin(_off)), float(np.nanmax(_off))
+            _strf = np.asarray(res.get('strf_raw', res['strf']))
+            _prof = np.asarray(_sep['profile'], dtype=float)
+            _tc = np.asarray(_sep['time_course'], dtype=float)
+            _ef = np.asarray(_sep['energy_frac'], dtype=float)
+            _str = np.asarray(_sep['second_trace'], dtype=float)
+            for _i, _r in enumerate(_show):
+                ax = axes[_i // _ncol, _i % _ncol]
+                _blk = _strf[_r][_vis, :_nw]
+                _zb = np.asarray(res['strf_z'])[_r][_vis, :_nw]
+                _cells = np.flatnonzero(np.nanmax(np.abs(_zb), axis=1) > 2.5)
+                for _c in _cells:
+                    _y = _blk[_c] * (np.sign(_prof[0, _r, _c]) or 1.0)
+                    _m = float(np.nanmax(np.abs(_y)))
+                    if not _m > 0:
+                        continue
+                    _t = 0.5 if _hi <= _lo else (_off[_c] - _lo) / (_hi - _lo)
+                    ax.plot(_tl[:_nw], _y / _m, color=_cmap(_t), lw=0.9, alpha=0.85)
+                _t1 = _tc[0, _r]
+                _m1 = float(np.nanmax(np.abs(_t1))) or 1.0
+                ax.plot(_tl[:_nw], _t1 / _m1, color='k', lw=2.2, label='rank-1 time course')
+                _t2 = _str[_r]
+                if np.isfinite(_t2).any() and np.nanmax(np.abs(_t2)) > 0:
+                    ax.plot(_tl[:_nw], _t2 / float(np.nanmax(np.abs(_t2))), color='0.45',
+                            lw=1.4, ls='--',
+                            label='tested 2nd-component trace (cross-fold)')
+                ax.axhline(0, color='0.7', lw=0.6)
+                _k = int(np.flatnonzero(_keep == _r)[0])
+                ax.set_title('roi {}  z {:.1f}  frac {:.2f} (+{:.2f} rank 2)\n'
+                             '2nd-component z {:.1f}  {}'.format(
+                                 _r, _pz[_k], _f1[_k], _inc[_k], _rz[_k],
+                                 'INSEPARABLE' if _ins[_k] else
+                                 ('separable' if _tested else 'untested')),
+                             fontsize=10,
+                             color='#d62728' if _ins[_k] else 'k')
+                ax.set_xlabel('lag (s)')
+                if _i % _ncol == 0:
+                    ax.set_ylabel('normalised filter')
+                if _i == 0:
+                    ax.legend(fontsize=8, loc='upper right')
+            for _i in range(len(_show), _nrow * _ncol):
+                axes[_i // _ncol, _i % _ncol].set_axis_off()
+            fig.suptitle('{} {} {}: driven cells (|z| > 2.5, colour = position along the '
+                         'axis, oriented by the rank-1 profile) over the rank-1 time '
+                         'course'.format(sn, ch, glabel), fontsize=12)
+            if save_figs:
+                fig.savefig(os.path.join(
+                    figs_dir, 'strf_one_d_SEP_ROIS_{}_{}_{}.pdf'.format(
                         sn, ch, glabel)))
             if not show_figs:
                 plt.close(fig)

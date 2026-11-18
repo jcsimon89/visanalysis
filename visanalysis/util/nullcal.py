@@ -129,7 +129,7 @@ def shifts_for(duration_s, filter_length_s, n_shifts=DEFAULT_SHIFTS):
 
 
 def calibrate(make_filter, shifts, percentile=95.0, noise_frac=0.3,
-              peak_lags=None):
+              peak_lags=None, extra_stats=None):
     """Null from circular shifts of the stimulus.
 
     make_filter : callable(shift_s) -> (n_roi, ..., n_lags)
@@ -141,11 +141,22 @@ def calibrate(make_filter, shifts, percentile=95.0, noise_frac=0.3,
     peak_lags : int or None
         Leading lags searched for the peak (peak_lags_for); recorded in the
         result so select_rois searches the ROIs over the same lags.
+    extra_stats : dict name -> callable(filter) -> (n_roi,) or None
+        Further statistics evaluated on every shifted filter, so a second
+        test can share the null's shifts instead of recomputing them (the
+        separability residual does this). Their pooled finite draws come back
+        as result['null_extra'][name].
     """
     shifts = list(shifts)
     if not shifts:
         raise ValueError('need at least one shift; several is better')
-    draws = [peak_z(make_filter(s), noise_frac, peak_lags) for s in shifts]
+    extra_stats = dict(extra_stats or {})
+    draws, extra = [], {k: [] for k in extra_stats}
+    for s in shifts:
+        filt = make_filter(s)
+        draws.append(peak_z(filt, noise_frac, peak_lags))
+        for k, fn in extra_stats.items():
+            extra[k].append(np.asarray(fn(filt), dtype=float))
     per_shift = [dict(shift_s=float(s), n=int(np.isfinite(d).sum()),
                       p95=float(np.nanpercentile(d, 95)))
                  for s, d in zip(shifts, draws)]
@@ -153,10 +164,15 @@ def calibrate(make_filter, shifts, percentile=95.0, noise_frac=0.3,
     null = null[np.isfinite(null)]
     if null.size == 0:
         raise ValueError('null contained no usable ROIs')
+    null_extra = {}
+    for k, d in extra.items():
+        v = np.concatenate(d) if d else np.array([], dtype=float)
+        null_extra[k] = v[np.isfinite(v)]
     return dict(threshold=float(np.percentile(null, percentile)), null=null,
                 shifts=shifts, n_shifts=len(shifts), per_shift=per_shift,
                 percentile=float(percentile), n_null=int(null.size),
-                noise_frac=float(noise_frac), peak_lags=peak_lags)
+                noise_frac=float(noise_frac), peak_lags=peak_lags,
+                null_extra=null_extra)
 
 
 def pvalues(observed, null):
